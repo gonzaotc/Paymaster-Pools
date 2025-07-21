@@ -11,12 +11,10 @@ import {PaymasterERC20} from
     "@openzeppelin/community-contracts/account/paymaster/PaymasterERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
+import {IPaymaster} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
+import {MinimalPaymasterCore} from "./MinimalPaymasterCore.sol";
 
-contract PaymasterPool is PaymasterERC20, ERC7535 {
-    error InvalidDepositAmount();
-
-    error Disabled();
-
+contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     IERC20 public immutable acceptedToken;
 
     constructor(address _acceptedToken)
@@ -54,51 +52,29 @@ contract PaymasterPool is PaymasterERC20, ERC7535 {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
-
         _burn(owner, shares);
-
         entryPoint().withdrawTo(payable(receiver), assets);
-
         emit Withdraw(caller, receiver, owner, assets, shares);
     }
 
-    // ---- PaymasterERC20 Abstract Functions ----
-
-    /// @inheritdoc PaymasterERC20
-    function _fetchDetails(PackedUserOperation calldata userOp, bytes32 userOpHash)
-        internal
-        view
-        override
-        returns (uint256 validationData, IERC20 token, uint256 tokenPrice)
-    {
-        // TODO: Implement your token validation and pricing logic
-        // For now, return basic values
-        return (0, acceptedToken, 1e18); // Placeholder - implement proper oracle pricing
+    /// @inheritdoc MinimalPaymasterCore
+    function _validatePaymasterUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash,
+        uint256 maxCost
+    ) internal view override returns (bytes memory context, uint256 validationData) {
+        // TODO: Implement validation logic
+        return (bytes(""), 0);
     }
 
-    /// ------ Disable PaymasterCore functions ------
-
-    function deposit() public payable override {
-        revert Disabled();
+    /// @inheritdoc MinimalPaymasterCore
+    function _postOp(
+        PostOpMode mode,
+        bytes calldata context,
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
+    ) internal virtual override {
+        // TODO: Implement post-operation logic
     }
 
-    function withdraw(address payable to, uint256 value) public override {
-        revert Disabled();
-    }
-
-    function addStake(uint32 unstakeDelaySec) public payable override {
-        revert Disabled();
-    }
-
-    function unlockStake() public override {
-        revert Disabled();
-    }
-
-    function withdrawStake(address payable to) public override {
-        revert Disabled();
-    }
-
-    function _authorizeWithdraw() internal view override {
-        revert Disabled();
-    }
 }
