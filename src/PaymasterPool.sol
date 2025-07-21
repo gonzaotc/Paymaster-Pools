@@ -63,7 +63,8 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
         bytes32 userOpHash,
         uint256 maxCost
     ) internal view override returns (bytes memory context, uint256 validationData) {
-        // TODO: Implement validation logic
+        // TODO: Implement validation logic.
+        // Drive inspiration from "@openzeppelin/community-contracts/account/paymaster/PaymasterERC20.sol"
         return (bytes(""), 0);
     }
 
@@ -74,7 +75,8 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
         uint256 actualGasCost,
         uint256 actualUserOpFeePerGas
     ) internal virtual override {
-        // TODO: Implement post-operation logic
+        // TODO: Implement post-operation logic.
+        // Drive inspiration from "@openzeppelin/community-contracts/account/paymaster/PaymasterERC20.sol"
     }
 
 }
