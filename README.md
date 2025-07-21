@@ -22,7 +22,11 @@ Today's ERC-20 paymasters suffer from critical centralization issues:
 - **Owner-gated decisions**: The paymaster owner decides which tokens to support based on their capacity to monitor and rebalance
 - **Poor UX**: Users struggle to find paymasters that support their desired tokens and must be highly technical to search for compatible ERC-20 paymasters
 
-#### **5. Systemic Risk & Single Points of Failure**
+#### **5. Concentrated Volatility Risk**
+- **Single entity bears all price risk**: The paymaster owner is exposed to volatility of both ETH (required for gas payments) and all accepted tokens (collected as fees)
+- **No risk distribution**: Price fluctuations can cause significant losses for the sole capital provider, making the business model unsustainable during market volatility
+
+#### **6. Systemic Risk & Single Points of Failure**
 - **Ecosystem dominated by 2-3 players**: The majority of ERC-4337 users rely on just a few major paymaster providers
 - **Service dependency**: If these major providers go offline, the entire gas sponsoring system becomes unavailable
 
@@ -32,21 +36,21 @@ Today's ERC-20 paymasters suffer from critical centralization issues:
 
 To drive meaningful improvement, a decentralized paymaster should:
 
-#### 🌊 **1. Permissionless Liquidity Provision**
+#### **1. Permissionless Liquidity Provision**
 Allow anyone to provide liquidity (ETH) for sponsoring transactions
 
-#### 💸 **2. Distributed Profit Sharing**
+#### **2. Distributed Profit Sharing**
 Distribute profits proportionally across all liquidity providers
 
-#### 🔄 **3. Autonomous Rebalancing**
+#### **3. Autonomous Rebalancing**
 Implement automatic or permissionless rebalancing mechanisms, similar to:
 - **MakerDAO liquidations** for letting anyone trigger a rebalance under certain treshold, and claiming a fee.
 - **Uniswap arbitrage opportunities** for setting the paymaster pool as a swapping pool and allowing traders to arbitrage unbalances.
 
-#### 🗺️ **4. Unified Paymaster Router**
+#### **4. Unified Paymaster Router**
 Offer a PaymasterRouter (Singleton) that indicates which paymaster to use for a given token at any moment, dramatically simplifying UX
 
-#### 🛡️ **5. Censorship-Resistant**
+#### **5. Censorship-Resistant**
 The decentralized paymaster should be unstoppable and not depend on any single participant, remaining resistant to censorship
 ---
 
