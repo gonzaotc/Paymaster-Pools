@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "lint": "forge fmt && solhint 'src/**/*.sol' --noPoster"
+  },
+  "dependencies": {
+    "solhint": "^6.0.0"
+  }
+}
