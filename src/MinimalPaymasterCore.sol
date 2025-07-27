@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.26;
 
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {IEntryPoint, IPaymaster, PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
+import {
+    IEntryPoint,
+    IPaymaster,
+    PackedUserOperation
+} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 
 /**
  * @dev A minimal paymaster core that only includes the minimal logic to validate and pay for user operations.
@@ -66,9 +70,9 @@ abstract contract MinimalPaymasterCore is IPaymaster {
      * making the gas price of the user operation to differ.
      */
     function _postOp(
-        PostOpMode /* mode */,
-        bytes calldata /* context */,
-        uint256 /* actualGasCost */,
+        PostOpMode, /* mode */
+        bytes calldata, /* context */
+        uint256, /* actualGasCost */
         uint256 /* actualUserOpFeePerGas */
     ) internal virtual {}
 
@@ -79,5 +83,4 @@ abstract contract MinimalPaymasterCore is IPaymaster {
             revert PaymasterUnauthorized(sender);
         }
     }
-
 }

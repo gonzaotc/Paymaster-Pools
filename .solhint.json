@@ -1,3 +1,12 @@
 {
-  "extends": "solhint:recommended"
-} 
+  "extends": "solhint:recommended",
+  "plugins": [],
+  "rules": {
+    "import-path-check": "off",
+    "func-visibility": ["warn", { "ignoreConstructors": true }],
+    "no-empty-blocks": "off",
+    "no-unused-vars": "off",
+    "gas-indexed-events": "off",
+    "gas-strict-inequalities": "off"
+  }
+}
