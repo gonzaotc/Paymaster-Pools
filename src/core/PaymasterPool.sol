@@ -6,13 +6,13 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import {MinimalPaymasterCore} from "./MinimalPaymasterCore.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {
     ERC4337Utils,
     PackedUserOperation
 } from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
 
 /**
  * @title PaymasterPool
@@ -25,9 +25,9 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     using SafeERC20 for IERC20;
 
     /**
-     * @notice Thrown when the PaymasterPool is not approved to spend the userOpSender's tokens
+     * @notice The ERC20 token accepted by this PaymasterPool for gas payments
      */
-    error PaymasterNotApproved();
+    IERC20 public immutable ACCEPTED_TOKEN;
 
     /**
      * @notice Emitted when a user operation is paid by this paymaster using the specified ERC-20 `token`.
@@ -41,9 +41,14 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     );
 
     /**
-     * @notice The ERC20 token accepted by this PaymasterPool for gas payments
+     * @notice Thrown when the PaymasterPool is not approved to spend the userOpSender's tokens
      */
-    IERC20 public immutable ACCEPTED_TOKEN;
+    error PaymasterNotApproved();
+
+    /**
+     * @notice Thrown when the PaymasterPool receives ether directly
+     */
+    error NotAllowed();
 
     /**
      * @notice Creates a new PaymasterPool for the specified ERC20 token
@@ -51,7 +56,7 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      */
     constructor(address _acceptedToken)
         ERC20(
-            string.concat("Paymaster Pooled ", IERC20Metadata(_acceptedToken).symbol()),
+            string.concat("Paymaster Pool ", IERC20Metadata(_acceptedToken).symbol()),
             string.concat("pp", IERC20Metadata(_acceptedToken).symbol())
         )
     {
@@ -118,12 +123,9 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
         bytes32 userOpHash,
         uint256 maxCost
     ) internal override returns (bytes memory context, uint256 validationData) {
-        // Get the paymaster data from the userOp
-        bytes calldata paymasterData = userOp.paymasterData();
-
         // Decode the paymaster data in order to obtain the permit parameters.
         (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) =
-            _decodePaymasterData(paymasterData);
+            _decodePaymasterData(userOp.paymasterData());
 
         // Attempt to consume the permit which may have been consumed by a front-runner.
         try IERC20Permit(address(ACCEPTED_TOKEN)).permit(
@@ -299,5 +301,13 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     {
         (userOpSender, prefundTokenAmount, prefundTokenPriceETH) =
             abi.decode(context, (address, uint256, uint256));
+    }
+
+    /**
+     * @notice Rejects ether deposits to the PaymasterPool
+     * @dev will convert this into a lp deposit later @TBD
+     */
+    receive() external payable {
+        revert NotAllowed();
     }
 }

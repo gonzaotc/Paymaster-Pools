@@ -3,6 +3,4 @@
 forge-std/=lib/forge-std/src/
 v4-core/=lib/v4-core/src/
 v4-periphery/=lib/v4-periphery/src/
-oz/=lib/openzeppelin-contracts/contracts/
-oz-community/=lib/openzeppelin-community-contracts/contracts/
-std/=lib/forge-std/src/
+account-abstraction/contracts=lib/account-abstraction/contracts

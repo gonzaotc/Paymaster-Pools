@@ -1,2 +1,2 @@
 src/ERC7535/*
-src/MinimalPaymasterCore.sol
+src/core/MinimalPaymasterCore.sol
