@@ -128,32 +128,24 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
             _decodePaymasterData(userOp.paymasterData());
 
         // Attempt to consume the permit which may have been consumed by a front-runner.
-        try IERC20Permit(address(ACCEPTED_TOKEN)).permit(
-            userOp.sender, address(this), value, deadline, v, r, s
-        ) {} catch {}
-
-        // Verify the paymaster is approved to spend the sender tokens
-        bool approved = ACCEPTED_TOKEN.allowance(userOp.sender, address(this)) >= value;
-
-        // If the paymaster is not approved, return a failed validation data
-        if (!approved) return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
+        _attemptPermit(userOp.sender, address(this), value, deadline, v, r, s);
 
         // Get the token price in native currency
-        uint256 tokenPriceETH = _acceptedTokenPriceETH();
+        uint256 tokenPriceInETH = _acceptedTokenPriceInETH();
 
         // Convert the maxCost to the token amount.
-        uint256 tokenAmount = _erc20Cost(maxCost, userOp.maxFeePerGas(), tokenPriceETH);
+        uint256 tokenAmount = _erc20Cost(maxCost, userOp.maxFeePerGas(), tokenPriceInETH);
 
         // Charge a fee for the lps @TBD
 
-        // Prefund the paymaster with the token
+        // Attempt to refund the paymaster with the token
         bool success = ACCEPTED_TOKEN.trySafeTransferFrom(userOp.sender, address(this), tokenAmount);
 
         // If the prefund fails, return a failed validation data
         if (!success) return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
 
         return (
-            _encodeValidationContext(userOp.sender, tokenAmount, tokenPriceETH),
+            _encodeValidationContext(userOp.sender, tokenAmount, tokenPriceInETH),
             ERC4337Utils.SIG_VALIDATION_SUCCESS
         );
     }
@@ -184,22 +176,49 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     }
 
     /**
-     * @notice Queries the token price for the acceptedToken in ETH using USD-based pricing oracles
-     * @return tokenPriceETH Price of 1 unit of acceptedToken in wei (native currency)
+     * @notice Attempts to consume a permit for the accepted token
+     * @param owner The owner of the permit
+     * @param spender The spender of the permit
+     * @param value The value of the permit
+     * @param deadline The deadline of the permit
+     * @param v The v component of the permit
+     * @param r The r component of the permit
+     * @param s The s component of the permit
      */
-    function _acceptedTokenPriceETH() internal view virtual returns (uint256 tokenPriceETH) {
+    function _attemptPermit(
+        address owner,
+        address spender,
+        uint256 value,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal returns (bool success) {
+        try IERC20Permit(address(ACCEPTED_TOKEN)).permit(owner, spender, value, deadline, v, r, s) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * @notice Queries the token price for the acceptedToken in ETH using USD-based pricing oracles
+     * @dev @TBD once we add a external call here, we will need to avoid reverts in case of failure and return validation failed instead.
+     * @return tokenPriceInETH Price of 1 unit of acceptedToken in wei (native currency)
+     */
+    function _acceptedTokenPriceInETH() internal view virtual returns (uint256 tokenPriceInETH) {
         // Get prices from oracles (both in USD with 8 decimals, assume Chainlink standard for now).
-        uint256 tokenPriceUSD = 1e8; // $1.00000000 for USDC (8 decimals)
-        uint256 ethPriceUSD = 2500e8; // $2500.00000000 for ETH (8 decimals)
+        uint256 tokenPriceInUSD = 1e8; // $1.00000000 for USDC (8 decimals)
+        uint256 ethPriceInUSD = 2500e8; // $2500.00000000 for ETH (8 decimals)
 
         // Get the token decimals.
         uint256 tokenDecimals = IERC20Metadata(address(ACCEPTED_TOKEN)).decimals();
 
         // Calculate the token price in ETH scaled by a {_tokenPriceDenominator()} factor to avoid fractional value loss.
-        tokenPriceETH = ((tokenPriceUSD / 10 ** tokenDecimals) / (ethPriceUSD / 1e18))
+        tokenPriceInETH = ((tokenPriceInUSD / 10 ** tokenDecimals) / (ethPriceInUSD / 1e18))
             * _tokenPriceDenominator();
 
-        return tokenPriceETH;
+        return tokenPriceInETH;
     }
 
     /**
@@ -275,15 +294,15 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      * @notice Encodes the validation context for use in postOp phase.
      * @param userOpSender Address of the user operation sender
      * @param prefundTokenAmount Amount of tokens prefunded during validation
-     * @param prefundTokenPriceETH Token price used during validation
+     * @param prefundTokenPriceInETH Token price used during validation
      * @return Encoded context for postOp refund calculation
      */
     function _encodeValidationContext(
         address userOpSender,
         uint256 prefundTokenAmount,
-        uint256 prefundTokenPriceETH
+        uint256 prefundTokenPriceInETH
     ) internal view virtual returns (bytes memory) {
-        return abi.encodePacked(userOpSender, prefundTokenAmount, prefundTokenPriceETH);
+        return abi.encodePacked(userOpSender, prefundTokenAmount, prefundTokenPriceInETH);
     }
 
     /**
@@ -291,15 +310,15 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      * @param context Encoded validation context from _validatePaymasterUserOp
      * @return userOpSender Address of the user operation sender
      * @return prefundTokenAmount Amount of tokens prefunded during validation
-     * @return prefundTokenPriceETH Token price used during validation
+     * @return prefundTokenPriceInETH Token price used during validation
      */
     function _decodeValidationContext(bytes memory context)
         internal
         view
         virtual
-        returns (address userOpSender, uint256 prefundTokenAmount, uint256 prefundTokenPriceETH)
+        returns (address userOpSender, uint256 prefundTokenAmount, uint256 prefundTokenPriceInETH)
     {
-        (userOpSender, prefundTokenAmount, prefundTokenPriceETH) =
+        (userOpSender, prefundTokenAmount, prefundTokenPriceInETH) =
             abi.decode(context, (address, uint256, uint256));
     }
 
