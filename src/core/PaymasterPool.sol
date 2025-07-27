@@ -64,6 +64,14 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     }
 
     /**
+     * @notice Rejects ether deposits to the PaymasterPool
+     * @dev will convert this into a lp deposit later @TBD
+     */
+    receive() external payable {
+        revert NotAllowed();
+    }
+
+    /**
      * @notice Returns the total ether deposited into the ERC-4337 entryPoint that belongs to this PaymasterPool
      * @return Total assets (ETH) available for gas payments
      */
@@ -184,6 +192,7 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      * @param v The v component of the permit
      * @param r The r component of the permit
      * @param s The s component of the permit
+     * @return success Whether the permit was consumed successfully
      */
     function _attemptPermit(
         address owner,
@@ -208,8 +217,8 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      */
     function _acceptedTokenPriceInETH() internal view virtual returns (uint256 tokenPriceInETH) {
         // Get prices from oracles (both in USD with 8 decimals, assume Chainlink standard for now).
-        uint256 tokenPriceInUSD = 1e8; // $1.00000000 for USDC (8 decimals)
-        uint256 ethPriceInUSD = 2500e8; // $2500.00000000 for ETH (8 decimals)
+        uint256 tokenPriceInUSD = _queryTokenPriceInUSD();
+        uint256 ethPriceInUSD = _queryEthPriceInUSD();
 
         // Get the token decimals.
         uint256 tokenDecimals = IERC20Metadata(address(ACCEPTED_TOKEN)).decimals();
@@ -219,6 +228,26 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
             * _tokenPriceDenominator();
 
         return tokenPriceInETH;
+    }
+
+    /**
+     * @notice Queries the token price for the acceptedToken in USD
+     * @dev @TBD once we add a external call here, we will need to avoid reverts in case of failure and return validation failed instead.
+     * @return tokenPriceInUSD Price of 1 unit of acceptedToken in USD
+     */
+    function _queryTokenPriceInUSD() internal view virtual returns (uint256 tokenPriceInUSD) {
+        // Get prices from oracles (both in USD with 8 decimals, assume Chainlink standard for now).
+        tokenPriceInUSD = 1e8; // $1.00000000 for USDC (8 decimals)
+    }
+
+    /**
+     * @notice Queries the ETH price in USD
+     * @dev @TBD once we add a external call here, we will need to avoid reverts in case of failure and return validation failed instead.
+     * @return ethPriceInUSD Price of 1 unit of ETH in USD
+     */
+    function _queryEthPriceInUSD() internal view virtual returns (uint256 ethPriceInUSD) {
+        // Get prices from oracles (both in USD with 8 decimals, assume Chainlink standard for now).
+        ethPriceInUSD = 2500e8; // $2500.00000000 for ETH (8 decimals)
     }
 
     /**
@@ -320,13 +349,5 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     {
         (userOpSender, prefundTokenAmount, prefundTokenPriceInETH) =
             abi.decode(context, (address, uint256, uint256));
-    }
-
-    /**
-     * @notice Rejects ether deposits to the PaymasterPool
-     * @dev will convert this into a lp deposit later @TBD
-     */
-    receive() external payable {
-        revert NotAllowed();
     }
 }

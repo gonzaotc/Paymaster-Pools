@@ -109,20 +109,22 @@ contract PaymasterPoolTest is Test, TestUtils {
         // Setup permit parameters
         uint256 value = type(uint256).max;
         uint256 deadline = type(uint256).max;
-        
+
         // Generate permit signature
         (uint8 v, bytes32 r, bytes32 s) = _generatePermitSignature(
             IERC20Permit(address(token)),
-            sender, 
-            address(paymasterPool), 
-            value, 
+            sender,
+            address(paymasterPool),
+            value,
             deadline,
             senderPrivateKey
         );
-        
+
         // Verify that the permit call succeeds
-        assertTrue(paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s));
-        
+        assertTrue(
+            paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s)
+        );
+
         // Verify that the allowance was set correctly
         assertEq(token.allowance(sender, address(paymasterPool)), value);
     }
@@ -131,21 +133,29 @@ contract PaymasterPoolTest is Test, TestUtils {
         // Setup permit parameters
         uint256 value = type(uint256).max;
         uint256 deadline = type(uint256).max;
-        
+
         // Generate permit signature
         (uint8 v, bytes32 r, bytes32 s) = _generatePermitSignature(
             IERC20Permit(address(token)),
-            sender, 
-            address(paymasterPool), 
-            value, 
+            sender,
+            address(paymasterPool),
+            value,
             deadline,
             senderPrivateKey
         );
-        
+
         // Verify that the permit call succeeds
-        assertTrue(paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s));
-        
-        // Consume the permit again 
-        assertFalse(paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s));
+        assertTrue(
+            paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s)
+        );
+
+        // Consume the permit again
+        assertFalse(
+            paymasterPool.attemptPermit(sender, address(paymasterPool), value, deadline, v, r, s)
+        );
     }
+
+    function test_acceptedTokenPriceInETH() public {}
+
+    function test_erc20Cost() public {}
 }

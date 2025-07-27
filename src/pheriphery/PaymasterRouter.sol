@@ -49,7 +49,8 @@ contract PaymasterRouter {
     }
 
     /**
-     * @notice The canonical entry point for the account that forwards and validates user operations
+     * @notice Gets the canonical entry point for the account that forwards and validates user operations
+     * @return The canonical entry point for the account that forwards and validates user operations
      */
     function entryPoint() public view virtual returns (IEntryPoint) {
         return ERC4337Utils.ENTRYPOINT_V08;

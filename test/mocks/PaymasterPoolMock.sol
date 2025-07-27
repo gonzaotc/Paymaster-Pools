@@ -6,10 +6,6 @@ import {PaymasterPool} from "src/core/PaymasterPool.sol";
 contract PaymasterPoolMock is PaymasterPool {
     constructor(address acceptedToken) PaymasterPool(acceptedToken) {}
 
-    function acceptedTokenPriceInETH() public view returns (uint256) {
-        return _acceptedTokenPriceInETH();
-    }
-
     function attemptPermit(
         address owner,
         address spender,
@@ -20,6 +16,18 @@ contract PaymasterPoolMock is PaymasterPool {
         bytes32 s
     ) public returns (bool success) {
         return _attemptPermit(owner, spender, value, deadline, v, r, s);
+    }
+
+    function acceptedTokenPriceInETH() public view returns (uint256) {
+        return _acceptedTokenPriceInETH();
+    }
+
+    function queryTokenPriceInUSD() public view returns (uint256) {
+        return _queryTokenPriceInUSD();
+    }
+
+    function queryEthPriceInUSD() public view returns (uint256) {
+        return _queryEthPriceInUSD();
     }
 
     function erc20Cost(uint256 cost, uint256 feePerGas, uint256 tokenPrice)
