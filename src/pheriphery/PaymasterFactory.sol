@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
 
-pragma solidity ^0.8.26;
-
+// Internal
 import {PaymasterPool} from "src/core/PaymasterPool.sol";
 
 /**
  * @title PaymasterFactory
  * @author Gonzalo Othacehe
- * @notice A factory for creating paymaster pools
+ * @notice A Singleton factory for creating PaymaterPools
  */
 contract PaymasterFactory {
     /**
-     * @notice A mapping of accepted tokens to their corresponding paymaster pools
+     * @notice A mapping of accepted tokens to their corresponding PaymasterPool.
      * @dev In this first implementation, we only support one paymaster per token.
-     * Futurely, we will support multiple paymasters per token with different fee structures.
+     * Futurely, we will support multiple paymasters per token with different fee configurations.
      */
     mapping(address token => address paymaster) public paymasters;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.27;
 
-import {ERC7535} from "src/ERC7535/ERC7535.sol";
+// External
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
@@ -12,12 +12,20 @@ import {
     ERC4337Utils,
     PackedUserOperation
 } from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+
+// Internal
+import {ERC7535} from "src/ERC7535/ERC7535.sol";
 import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
 
 /**
  * @title PaymasterPool
  * @author Gonzalo Othacehe
- * @notice A permissionless paymaster pool that allows liquidity providers to pay user operations in exchange of ERC20 tokens
+ * @notice A permissionless paymaster pool that allows users to access the Ethereum Protocol without
+ *  ether, while enabling liquidity providers to earn a corresponding share of the fees.
+ *
+ * Conceptually: as the Uniswap protocol is an AMM that allows anyone to exchange tokens and LPs to
+ *  provide the service while getting paid, think of PaymasterPools as an Automated Paymaster that allows
+ *  users to get their user operations sponsored, and LPs to provide the service while getting paid.
  */
 contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     using ERC4337Utils for *;
@@ -48,7 +56,7 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
     /**
      * @notice Thrown when the PaymasterPool receives ether directly
      */
-    error NotAllowed();
+    error ReceiveNotAllowed();
 
     /**
      * @notice Creates a new PaymasterPool for the specified ERC20 token
@@ -68,7 +76,7 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
      * @dev will convert this into a lp deposit later @TBD
      */
     receive() external payable {
-        revert NotAllowed();
+        revert ReceiveNotAllowed();
     }
 
     /**

@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
 
-pragma solidity ^0.8.26;
-
+// External
 import {IEntryPoint} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
+
+// Internal
 import {PaymasterFactory} from "src/pheriphery/PaymasterFactory.sol";
 
 /**
  * @title PaymasterRouter
  * @author Gonzalo Othacehe
- * @notice A router for finding the path towards a paymaster pool with enough deposit to cover the user operation
+ * @notice A router for finding the path towards a paymaster pool supporting a given token
+ * and enough ETH deposit to cover the user operation.
  */
 contract PaymasterRouter {
     /**

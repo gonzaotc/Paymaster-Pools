@@ -16,3 +16,6 @@
 [submodule "lib/account-abstraction"]
 	path = lib/account-abstraction
 	url = https://github.com/eth-infinitism/account-abstraction
+[submodule "lib/uniswap-hooks"]
+	path = lib/uniswap-hooks
+	url = https://github.com/openzeppelin/uniswap-hooks

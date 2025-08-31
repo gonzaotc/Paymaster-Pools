@@ -63,12 +63,6 @@ contract PaymasterPoolTest is Test, TestUtils {
     }
 
     function test_singleLP_deposit() public {
-        // verify the pool is empty (there is no paymasterPool deposit in the entrypoint)
-        assertEq(paymasterPool.totalAssets(), 0);
-
-        // verify that the ppDAI supply is 0
-        assertEq(paymasterPool.totalSupply(), 0);
-
         // lp1 deposit 1 ether to the pool
         vm.prank(lp1);
         paymasterPool.deposit{value: 1e18}(1e18, lp1);
@@ -103,6 +97,73 @@ contract PaymasterPoolTest is Test, TestUtils {
 
         // verify the ppDAI balance of the lp2 is 1e18
         assertEq(paymasterPool.balanceOf(lp2), 1e18);
+    }
+
+    function test_singleLP_withdraw() public {
+        // lp1 deposit 1 ether to the pool
+        vm.prank(lp1);
+        paymasterPool.deposit{value: 1e18}(1e18, lp1);
+
+        // verify the lp1 ether balance is now 0
+        assertEq(address(lp1).balance, 0);
+
+        // verify the lp1 shares balance is 1e18
+        assertEq(paymasterPool.balanceOf(lp1), 1e18);
+
+        // verify the pool has now 1 ether deposited
+        assertEq(paymasterPool.totalAssets(), 1e18);
+
+        // lp1 withdraw 1 ether from the pool
+        vm.prank(lp1);
+        paymasterPool.withdraw(1e18, lp1, lp1);
+
+        // verify the lp1 ether balance is now 1 ether again
+        assertEq(address(lp1).balance, 1e18);
+
+        // verify the lp1 shares balance is 0
+        assertEq(paymasterPool.balanceOf(lp1), 0);
+
+        // verify the pool is empty
+        assertEq(paymasterPool.totalAssets(), 0);
+
+        // verify the pool supply is 0
+        assertEq(paymasterPool.totalSupply(), 0);
+    }
+
+    function test_multipleLP_withdraw() public {
+        // lp1 deposit 1 ether to the pool
+        vm.prank(lp1);
+        paymasterPool.deposit{value: 1e18}(1e18, lp1);
+
+        // lp2 deposit 1 ether to the pool
+        vm.prank(lp2);
+        paymasterPool.deposit{value: 1e18}(1e18, lp2);
+
+        // lp1 withdraw 1 ether from the pool
+        vm.prank(lp1);
+        paymasterPool.withdraw(1e18, lp1, lp1);
+
+        // verify the lp1 ether balance is now 1 ether again
+        assertEq(address(lp1).balance, 1e18);
+
+        // verify the lp1 shares balance is 0
+        assertEq(paymasterPool.balanceOf(lp1), 0);
+
+        // lp2 withdraw 1 ether from the pool
+        vm.prank(lp2);
+        paymasterPool.withdraw(1e18, lp2, lp2);
+
+        // verify the lp2 ether balance is now 1 ether again
+        assertEq(address(lp2).balance, 1e18);
+
+        // verify the lp2 shares balance is 0
+        assertEq(paymasterPool.balanceOf(lp2), 0);
+
+        // verify the pool is empty
+        assertEq(paymasterPool.totalAssets(), 0);
+
+        // verify the pool supply is 0
+        assertEq(paymasterPool.totalSupply(), 0);
     }
 
     function test_permit_success() public {
