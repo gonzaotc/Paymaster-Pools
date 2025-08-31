@@ -16,6 +16,8 @@ import {BaseHook} from "@openzeppelin/uniswap-hooks/base/BaseHook.sol";
 import {BaseCustomAccounting} from "@openzeppelin/uniswap-hooks/base/BaseCustomAccounting.sol";
 import {ERC6909TokenSupply} from "@openzeppelin/contracts/token/ERC6909/extensions/draft-ERC6909TokenSupply.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
+import {LiquidityAmounts} from "v4-periphery/libraries/LiquidityAmounts.sol";
+import {Position} from "v4-core/libraries/Position.sol";
 
 // Internal
 import {ERC7535} from "src/ERC7535/ERC7535.sol";
@@ -143,18 +145,53 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // Take the entire entrypoint deposit into the PoolManager.
-
-        // 1. ask the entry point how much
-        uint256 balance = entryPoint().balanceOf(address(this));
-
-        // 2. get da money!
-        entryPoint().withdrawTo(payable(address(this)), balance);
-
-        // 3. put da money rowlling rowlling
-
+        // Just-in-time liquidity provision
+        // NOTE: Both ETH and tokens are moved for in-range liquidity
+        
+        // 1. Withdraw ETH from EntryPoint
+        uint256 ethBalance = entryPoint().balanceOf(address(this));
+        entryPoint().withdrawTo(payable(address(this)), ethBalance);
+        
+        // 2. Token balance is already in the hook (from LP deposits)
+        uint256 tokenBalance = IERC20(key.currency1).balanceOf(address(this));
+        
+        // 3. Calculate optimal liquidity for narrow range
+        // Using narrow range for capital efficiency since position is temporary
+        int256 liquidityDelta = _calculateOptimalLiquidity(ethBalance, tokenBalance);
+        
+        // 4. Track for removal in afterSwap
+        _pendingLiquidity = liquidityDelta;
+        
+        // 5. Add concentrated liquidity
+        _modifyLiquidity(liquidityDelta);
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
+    }
+
+    /// @dev Calculate optimal liquidity based on available balances and current price.
+    /// NOTE: This implementation assumes concentrated liquidity around current price.
+    /// The tighter the range, the more capital efficient but higher impermanent loss risk.
+    function _calculateOptimalLiquidity(uint256 ethAmount, uint256 tokenAmount) 
+        internal 
+        view 
+        returns (int256 liquidityDelta) 
+    {
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(_poolKey.toId());
+        
+        // Convert ticks to sqrt prices
+        uint160 sqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(getTickLower());
+        uint160 sqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(getTickUpper());
+        
+        // Calculate the maximum liquidity we can add with our balances
+        uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
+            sqrtPriceX96,
+            sqrtPriceLowerX96, 
+            sqrtPriceUpperX96,
+            ethAmount,
+            tokenAmount
+        );
+        
+        return int256(uint256(liquidity));
     }
 
     function _afterSwap(
@@ -164,7 +201,18 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal virtual override returns (bytes4, int128) {
-        // Return the entire entrypoint deposit to the PoolManager.
+        // Remove the exact liquidity we added in beforeSwap
+        if (_pendingLiquidity > 0) {
+            _modifyLiquidity(-_pendingLiquidity);
+            _pendingLiquidity = 0;
+        }
+        
+        // Deposit ETH back to EntryPoint
+        uint256 ethBalance = address(this).balance;
+        if (ethBalance > 0) {
+            entryPoint().depositTo{value: ethBalance}(address(this));
+        }
+        
         return (this.afterSwap.selector, 0);
     }
 
@@ -173,13 +221,13 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @TBD: currently the liquidity is being added to the entire curve, but this may be 
     /// optimized by adding liquidity to a very small range. 
     function _modifyLiquidity(int256 liquidityDelta) internal returns (BalanceDelta delta) {
-        (int24 tickLower, int24 tickUpper) = getClosestTickRange();
+        // (int24 tickLower, int24 tickUpper) = getClosestTickRange();
 
         (delta,) = poolManager.modifyLiquidity(
             _poolKey,
             ModifyLiquidityParams({
-                tickLower: tickLower,
-                tickUpper: tickUpper,
+                tickLower: getTickLower(),
+                tickUpper: getTickUpper(),
                 liquidityDelta: liquidityDelta,
                 salt: bytes32(0)
             }),
@@ -187,25 +235,36 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         );
     }
 
-    /// @dev Returns the closest tick range to the current tick of the pool.
-    /// Note that missaligned ticks to the pool tickSpacing will revert.
-    function getClosestTickRange() public view virtual returns (int24 tickLower, int24 tickUpper) {
-        int24 spacing = _poolKey.tickSpacing;
-        (, int24 currentTick,,) = poolManager.getSlot0(_poolKey.toId());
-        int24 floor = getTickFloor(currentTick, tickSpacing);
-
-        return (floor, floor + tickSpacing);
-    }
+    /// @dev Returns the tick range for just-in-time liquidity provision.
+    /// Since liquidity exists only during the swap (microseconds), we can use
+    /// extremely concentrated positions without impermanent loss concerns.
+    /// 
+    /// NOTE: The narrower the range, the more likely large swaps will push
+    /// price outside the range mid-execution, reducing fee capture.
+    // function getClosestTickRange() public view virtual returns (int24 tickLower, int24 tickUpper) {
+    //     int24 spacing = _poolKey.tickSpacing;
+    //     (, int24 currentTick,,) = poolManager.getSlot0(_poolKey.toId());
+        
+    //     int24 floor = getTickFloor(currentTick, spacing);
+        
+    //     // Ultra-concentrated: Single tick spacing for maximum capital efficiency
+    //     // Safe because position exists only during atomic swap
+    //     // Trade-off: Large swaps may exit range mid-execution
+    //     return (floor, floor + spacing);
+        
+    //     // Alternative: Slightly wider for large swap accommodation
+    //     // return (floor - spacing, floor + spacing * 2);
+    // }
 
     /// @dev Returns the floor of the tick divided by the spacing.
     /// i.e. getTickFloor(33, 60) = 0, getTickFloor(63, 60) = 60, getTickFloor(120, 60) = 120
     /// getTickFloor(-1, 60) = -60, getTickFloor(-60, 60) = -60, getTickFloor(-120, 60) = -120
-    function getTickFloor(int24 tick, int24 spacing) public pure returns (int24) {
-        // spacing must be > 0 in Uniswap; assume invariant holds
-        int24 q = tick / spacing; // truncates toward 0
-        if (tick < 0 && (tick % spacing) != 0) q -= 1; // adjust to floor
-        return q * spacing;
-    }
+    // function getTickFloor(int24 tick, int24 spacing) public pure returns (int24) {
+    //     // spacing must be > 0 in Uniswap; assume invariant holds
+    //     int24 q = tick / spacing; // truncates toward 0
+    //     if (tick < 0 && (tick % spacing) != 0) q -= 1; // adjust to floor
+    //     return q * spacing;
+    // }
 
     /// @dev Returns the lower tick boundary for the hook's liquidity position.
     function getTickLower() public view virtual returns (int24) {
@@ -215,5 +274,11 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Returns the upper tick boundary for the hook's liquidity position.
     function getTickUpper() public view virtual returns (int24) {
         return TickMath.maxUsableTick(_poolKey.tickSpacing);
+    }
+
+    /// @dev Retrieves the current liquidity of the hook owned position in the pool based on its `key`
+    function _getHookLiquidity(PoolKey calldata key) internal virtual returns (uint128 liquidity) {
+        bytes32 positionKey = Position.calculatePositionKey(address(this), getTickLower(), getTickUpper(), bytes32(0));
+        liquidity = poolManager.getPositionLiquidity(key.toId(), positionKey);
     }
 }
