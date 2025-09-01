@@ -59,7 +59,7 @@ Paymaster Pools are immutable contracts where anyone can provide liquidity and e
 #### **6. Increased Capital Utility: Rehypothecation**
 Since Paymaster Pools are Uniswap V4 liquidity pools in their core, swaps between [ETH, TOKEN] remain functional, novely increasing **capital utility ** as a consequence, as the provided liquidity can be simultaneously used for swapping **and** for gas sponsoring, potentially increasing LP's profits the [ETH, TOKEN] pairs in comparision with traditional pools where LP's only make profits from swaps. This is achieved through an ongoing development effort towards "**liquidity rehypothecation**", where ETH is locked in the ERC-4337 EntryPoint, available for sponsoring at all times, but moved into Uniswap's Pool Manager just-in-time when swaps happen (think of JIT similar to Flash Loans for liquidity provisioning), virtually allowing the same ETH liquidity to both sponsor transactions and serve as swap liquidity concurrently, making profits from both sources with the same capital, effectively increasing capital utility. 
 
-~~Getting paid for providing liquidity for swaps~~ => Geting paid for providing liquidity for swaps and for gas sponsoring. 
+~~Getting paid for providing liquidity for swaps~~ => Geting paid for providing liquidity for swaps AND for gas sponsoring. 
 
 #### **7. Autonomous Rebalancing**
 Naturally, since gas sponsoring decreases ETH balances and increases token balances (increased by sponsoring fees), there is constant pressure in the zeroForOne direction (ETH to Token), and a rebalance mechanism is required. 
