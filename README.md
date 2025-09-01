@@ -31,6 +31,10 @@ Today's Paymasters suffer from fundamental centralization issues with strong con
 - **Liquidity fragmentation**: Competing players create separate paymasters, fragmenting liquidity and decreasing capital efficiency
 - **Concentrated volatility risk**: The owner bears all price risk from both ETH (gas payments) and accepted tokens (fees), with no risk distribution mechanism, forcing higher fees to cover risks and making the model unsustainable during market volatility
 
+
+_Did you know that centralized paymasters today charge between 5% 100%?, based on a quick search, ZeroDev, Circle, and Pimlico Paymasters charge between 5-10%, while another less competent services charging up to 100%_
+
+
 ---
 
 ### A decentralized alternative: Paymaster Pools
