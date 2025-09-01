@@ -1,20 +1,20 @@
 ### Introduction:
 
 To use any EVM blockchain, users must pay their transaction costs (weighted in gas) in native currency, such as Ether.
-This has been already acknowledged for a long time by the community as a major pain in user experience and a significant blocker for mass blockchain
-adoption, where non-experienced users may eventually receive cryptocurrency in their account and be unable to do anything with it due to the 
-lack of native currency to operate, which is a really frustrating.
+This has been already acknowledged for a long time by the community as a major pain in the user experience and as a significant blocker for mass
+adoption, where newly onboarded users may eventually receive cryptocurrency in their account but kept blocked from doing anything with it due to the 
+lack of native currency to pay for the gas, which is a really frustrating.
 
 This led to extensive research and innovation which has produced several ERCs and EIPs aiming to solve this issue, 
-eventually deriving in the name of "**_Gas Abstraction_**", belonging as a sub-topic of the broader "**_Account Abstraction_**" space.
+eventually giving birth to the concept of "**_Gas Abstraction_**", as a sub-topic of the broader "**_Account Abstraction_**" space.
 
-Among various approaches, ERC-4337 has emerged as the leading solution due to its unique advantage: enabling gas abstraction without requiring Ethereum core protocol changes. While ERC-4337 provides an elegant off-protocol architecture for alternative gas payment methods, current paymaster implementations remain centralized and, frankly, immature. 
+Among various approaches, ERC-4337 has emerged as the current leading solution due to its unique advantage: enabling gas abstraction without requiring Ethereum core protocol changes. However, while ERC-4337 provides an elegant off-protocol architecture for alternative gas payment methods, current paymaster implementations remain centralized and, frankly, immature. 
 
-##### Core requirements for gas abstraction:
+##### Core requirements for truly useful gas abstraction:
 
 - **Universal token support**: Users should be able to pay gas with any token
-- **Zero downtime availability**: Users cannot operate during outages, requiring permanently available, censorship-resistant infrastructure
-- **Minimal pricing and costs overheads**: Gas sponsoring costs should be extremely low to make the system usable.
+- **Zero downtime availability**: permanently available, censorship-resistant infrastructure is a must, since users cannot be sponsored during downtimes
+- **Minimal pricing and costs overheads**: costs should be extremely low to make the system usable
 
 
 
@@ -49,14 +49,19 @@ Allows creation of different paymaster pools with any determined sponsoring fee 
 #### **4. Unified Paymaster Router**
 Offer a PaymasterRouter (Singleton) that simply indicates which paymaster offers the lowest sponsoring fee at any moment for a given token while having sufficient liquidity, dramatically simplifying UX.
 
-#### **5. Censorship-Resistant**
+#### **5. Censorship Resistance, zero downtime, Immutability **
 Paymaster Pools are immutable contracts where anyone can provide liquidity and exit at all times, creating a strong and decentralized resistant system.
 
-#### **6. Increased Liquidity Yields**
-Since Paymaster Pools are Uniswap V4 liquidity pools underneath, swaps between supported tokens and ether remains functional, novely increasing **capital utility **, as the provided liquidity can be simultaneously used for swapping **and** for gas sponsoring, potentially increasing LP's profits in [ETH, TOKEN] pairs in comparision with traditional Uniswap Pools that only make profits for LPs from swaps. This is achieved through an ongoing development effort of "liquidity rehypothecation", where ETH is locked in the ERC-4337 EntryPoint but moved into Uniswap's Pool Manager just-in-time when swaps happen (similar to Flash loans), virtually allowing ETH liquidity to sponsor transactions and serve as swap liquidity at the same time, making profits from both with the same capital.
+#### **6. Increased Capital Utility: Rehypothecation**
+Since Paymaster Pools are Uniswap V4 liquidity pools in their core, swaps between [ETH, TOKEN] remain functional, novely increasing **capital utility ** as a consequence, as the provided liquidity can be simultaneously used for swapping **and** for gas sponsoring, potentially increasing LP's profits the [ETH, TOKEN] pairs in comparision with traditional pools where LP's only make profits from swaps. This is achieved through an ongoing development effort towards "**liquidity rehypothecation**", where ETH is locked in the ERC-4337 EntryPoint, available for sponsoring at all times, but moved into Uniswap's Pool Manager just-in-time when swaps happen (think of JIT similar to Flash Loans for liquidity provisioning), virtually allowing the same ETH liquidity to both sponsor transactions and serve as swap liquidity concurrently, making profits from both sources with the same capital, effectively increasing capital utility. 
+
+~~Getting paid for providing liquidity for swaps~~ => Geting paid for providing liquidity for swaps and for gas sponsoring. 
 
 #### **7. Autonomous Rebalancing**
-Since Paymaster Pools are Uniswap V4 Pools underneath, the chosen rebalancing mechanism is permissionless swaps, allowing anyone to capture imbalances as arbitrage opportunities. Naturally, since gas sponsoring decreases ETH balances and increases token balances with included fees, there is constant pressure in the zeroForOne direction (ETH to Token), and these imbalances can be captured by anyone to make a profit, similar to how MakerDAO allows anyone to liquidate positions and make a profit by regulating the system. (Note that LPs earn fees on both sponsoring and rebalancing transactions, as rebalancing swaps also pays fees to LPs!)
+Naturally, since gas sponsoring decreases ETH balances and increases token balances (increased by sponsoring fees), there is constant pressure in the zeroForOne direction (ETH to Token), and a rebalance mechanism is required. 
+
+Similar to how MakerDAO allows anyone to liquidate positions and make a profit by regulating the system, and because Paymaster Pools are Uniswap V4 Pools, the chosen rebalancing mechanism are simply permissionless swaps, allowing anyone to capture generated imbalances as arbitrage opportunities.   (Note that LPs earn fees on both sponsoring and rebalancing transactions, as rebalancing swaps also pays fees to LPs!)
+
 
 ---
 
