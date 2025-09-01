@@ -53,7 +53,7 @@ Allows creation of different paymaster pools with any determined sponsoring fee 
 #### **4. Unified Paymaster Router**
 Offer a PaymasterRouter (Singleton) that simply indicates which paymaster offers the lowest sponsoring fee at any moment for a given token while having sufficient liquidity, dramatically simplifying UX.
 
-#### **5. Censorship Resistance, zero downtime, Immutability **
+#### **5. Censorship Resistance, Immutability **
 Paymaster Pools are immutable contracts where anyone can provide liquidity and exit at all times, creating a strong and decentralized resistant system.
 
 #### **6. Increased Capital Utility: Rehypothecation**
