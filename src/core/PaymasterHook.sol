@@ -4,7 +4,9 @@ pragma solidity ^0.8.27;
 // External
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC6909TokenSupply} from
     "@openzeppelin/contracts/token/ERC6909/extensions/draft-ERC6909TokenSupply.sol";
 import {
@@ -20,6 +22,7 @@ import {Position} from "v4-core/src/libraries/Position.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {
     IPoolManager,
     BalanceDelta,
@@ -319,5 +322,49 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Get the uint256 token ID for a pool key.
     function poolKeyTokenId(PoolKey calldata poolKey) public pure returns (uint256) {
         return uint256(PoolId.unwrap(poolKey.toId()));
+    }
+
+    /// @dev Validate the paymaster user operation.
+    function _validatePaymasterUserOp(
+        PackedUserOperation calldata userOp,
+        bytes32 userOpHash,
+        uint256 requiredPreFund
+    ) internal virtual override returns (bytes memory context, uint256 validationData) {
+        // to be implemented
+    }
+
+    /// @dev Post the paymaster user operation.
+    function _postOp(
+        PostOpMode, /* mode */
+        bytes calldata, /* context */
+        uint256, /* actualGasCost */
+        uint256 /* actualUserOpFeePerGas */
+    ) internal virtual override {
+        // to be implemented
+    }
+
+    /**
+     * @dev Set the hook permissions, specifically `beforeInitialize`, `beforeAddLiquidity`, `beforeRemoveLiquidity`,
+     * `beforeSwap`, and `afterSwap`
+     *
+     * @return permissions The hook permissions.
+     */
+    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
+        return Hooks.Permissions({
+            beforeInitialize: true,
+            afterInitialize: false,
+            beforeAddLiquidity: true,
+            beforeRemoveLiquidity: true,
+            afterAddLiquidity: false,
+            afterRemoveLiquidity: false,
+            beforeSwap: true,
+            afterSwap: true,
+            beforeDonate: false,
+            afterDonate: false,
+            beforeSwapReturnDelta: false,
+            afterSwapReturnDelta: false,
+            afterAddLiquidityReturnDelta: false,
+            afterRemoveLiquidityReturnDelta: false
+        });
     }
 }
