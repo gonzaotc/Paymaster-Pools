@@ -13,6 +13,7 @@ import {
 } from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 
 import {BaseHook} from "@openzeppelin/uniswap-hooks/base/BaseHook.sol";
+import {CurrencySettler} from "@openzeppelin/uniswap-hooks/utils/CurrencySettler.sol";
 
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {Position} from "v4-core/src/libraries/Position.sol";
@@ -28,7 +29,7 @@ import {
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {LiquidityAmounts} from "v4-periphery/libraries/LiquidityAmounts.sol";
-import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {PoolIdLibrary, PoolId} from "v4-core/src/types/PoolId.sol";
 
 // Internal
 import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
@@ -45,6 +46,7 @@ import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
  */
 contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     using TransientStateLibrary for IPoolManager;
+    using CurrencySettler for Currency;
     using StateLibrary for IPoolManager;
     using ERC4337Utils for *;
     using SafeERC20 for IERC20;
@@ -96,7 +98,7 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /// @dev Initialize the pool.
-    /// Note that currency0 must always be native, as only [gas, token] pairs are supported.
+    /// Note that currency0 must always be native, as only [ETH, token] pairs are supported.
     function _beforeInitialize(address, PoolKey calldata key, uint160)
         internal
         override
@@ -174,57 +176,30 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     }
 
     /// @dev Just-in-time liquidity provisioning
-    /// both ETH and token are deposited into the PoolManager for in-range liquidity.
+    /// Creates an unique hook-owned liquidity position with all the hook balances,
+    /// providing both ETH and token for in-range liquidity.
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         virtual
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        int24 currentTick = getCurrentTick(key);
+        // 1. Ether balance is in the entry point
+        uint256 ethBalance = entryPoint().balanceOf(address(this));
 
-        if (params.zeroForOne) {
-            // User selling ETH for USDC, provide USDC liquidity BELOW current price
-            // Token balance is already in the hook (from LP deposits)
-            uint256 tokenBalance = IERC20(Currency.unwrap(key.currency1)).balanceOf(address(this));
+        // 2. Token balance is already in the hook
+        uint256 tokenBalance = key.currency1.balanceOfSelf();
 
-            int24 tickLower = currentTick - LIQUIDITY_TICK_OFFSET;
-            int24 tickUpper = currentTick;
-            uint256 liquidity = LiquidityAmounts.getLiquidityForAmount1(
-                TickMath.getSqrtPriceAtTick(tickLower),
-                TickMath.getSqrtPriceAtTick(tickUpper),
-                tokenBalance
-            );
+        // 3. Calculate optimal liquidity for narrow range
+        uint128 liquidity = _liquidityForAmounts(key, ethBalance, tokenBalance);
 
-            _modifyLiquidity(key, tickUpper, tickLower, int256(liquidity));
-        } else {
-            // User selling USDC for ETH, provide ETH liquidity ABOVE current price
-
-            // Withdraw ETH from EntryPoint
-            uint256 ethBalance = entryPoint().balanceOf(address(this));
-            entryPoint().withdrawTo(payable(address(this)), ethBalance);
-
-            int24 tickLower = currentTick;
-            int24 tickUpper = currentTick + LIQUIDITY_TICK_OFFSET;
-            uint256 liquidity = LiquidityAmounts.getLiquidityForAmount0(
-                TickMath.getSqrtPriceAtTick(tickLower),
-                TickMath.getSqrtPriceAtTick(tickUpper),
-                ethBalance
-            );
-
-            _modifyLiquidity(key, tickUpper, tickLower, int256(liquidity));
-        }
-
-        int24 tickLower = params.zeroForOne ? currentTick - LIQUIDITY_TICK_OFFSET : currentTick;
-        int24 tickUpper = params.zeroForOne ? currentTick : currentTick + LIQUIDITY_TICK_OFFSET;
-
-        _modifyLiquidity(key, tickUpper, tickLower, int256(liquidity));
+        // 5. Create the hook liquidity position
+        _modifyLiquidity(key, liquidity.toInt256());
 
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    /// @dev After swap, the liquidity is removed and the ETH is deposited back to the entry point.
-    /// Additionally, any pending deltas must be settled.
+    /// @dev Remove the hook liquidity position and settle any pending deltas.
     function _afterSwap(
         address sender,
         PoolKey calldata key,
@@ -232,35 +207,28 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         BalanceDelta delta,
         bytes calldata hookData
     ) internal virtual override returns (bytes4, int128) {
-        uint128 hookLiquidity = _getHookLiquidity(key);
+        uint128 hookLiquidity = _getHookPositionLiquidity(key);
 
-        if (hookLiquidity != 0) _modifyLiquidity(-int256(hookLiquidity));
+        // Remove the hook liquidity position
+        if (hookLiquidity != 0) _modifyLiquidity(key, -hookLiquidity.toInt256());
 
         // Settle any pending deltas.
         _settlePendingDeltas(key);
-
-        // Deposit ETH back to EntryPoint
-        uint256 ethBalance = address(this).balance;
-        if (ethBalance > 0) {
-            entryPoint().depositTo{value: ethBalance}(address(this));
-        }
 
         return (this.afterSwap.selector, 0);
     }
 
     /// Modify the hook-owned liquidity position.
     /// Requires the PoolManager to be unlocked due to the Flash Accounting model.
-    function _modifyLiquidity(
-        PoolKey calldata poolKey,
-        int24 tickUpper,
-        int24 tickLower,
-        int256 liquidityDelta
-    ) internal returns (BalanceDelta delta) {
+    function _modifyLiquidity(PoolKey calldata poolKey, int256 liquidityDelta)
+        internal
+        returns (BalanceDelta delta)
+    {
         (delta,) = poolManager.modifyLiquidity(
             poolKey,
             ModifyLiquidityParams({
-                tickLower: tickLower,
-                tickUpper: tickUpper,
+                tickLower: getTickLower(poolKey),
+                tickUpper: getTickUpper(poolKey),
                 liquidityDelta: liquidityDelta,
                 salt: bytes32(0)
             }),
@@ -281,17 +249,17 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Returns the current tick in a math reliable way.
     function getCurrentTick(PoolKey calldata poolKey) public view virtual returns (int24) {
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
-        return TickMath.getTickAtSqrtRatio(sqrtPriceX96);
+        return TickMath.getTickAtSqrtPrice(sqrtPriceX96);
     }
 
-    /// @dev Convert ETH to shares, currently is 1:1 ETH:shares
+    /// @dev Convert ETH to shares, default to 1:1 ETH:shares.
     function ethToShares(uint256 eth) public view returns (uint256) {
         return eth;
     }
 
     /// @dev Computes the maximum amount of liquidity received for a given amount of currency0 and currency1.
-    /// @TBD verify if the result is enough to provide all the liquidity held in the hook.
-    function _amountsToLiquidity(PoolKey calldata poolKey, uint256 ethAmount, uint256 tokenAmount)
+    /// may be inefficien since it may leave some liquidity unused, to be checked.
+    function _liquidityForAmounts(PoolKey calldata poolKey, uint256 ethAmount, uint256 tokenAmount)
         internal
         view
         returns (uint128 liquidity)
@@ -307,34 +275,49 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     }
 
     /// @dev Get the liquidity of the hook's position.
-    function _getHookLiquidity(PoolKey calldata poolKey) internal view returns (uint128) {
+    function _getHookPositionLiquidity(PoolKey calldata poolKey) internal view returns (uint128) {
         bytes32 positionKey = Position.calculatePositionKey(
             address(this), getTickLower(poolKey), getTickUpper(poolKey), bytes32(0)
         );
         return poolManager.getPositionLiquidity(poolKey.toId(), positionKey);
     }
 
+    /// @dev Settle the pending deltas.
+    ///
+    /// Settle any pending delta resulting from
+    ///    - beforeSwap liquidity provisioning
+    ///    - swap
+    ///    - afterSwap liquidity removal
+    ///
+    /// Ether will be taken or settled from the entry point.
+    /// Token will be taken or settled from the hook.
+    ///
     function _settlePendingDeltas(PoolKey calldata key) internal {
-        _settlePendingDelta(key.currency0);
-        _settlePendingDelta(key.currency1);
-    }
-
-    function _settlePendingDelta(Currency currency) internal virtual {
-        int256 currencyDelta = poolManager.currencyDelta(address(this), currency);
-
-        if (currencyDelta > 0) {
-            currency.take(poolManager, address(this), currencyDelta.toUint256(), false);
-            // _depositOnYieldSource(currency, currencyDelta.toUint256());
+        int256 etherDelta = poolManager.currencyDelta(address(this), key.currency0);
+        if (etherDelta > 0) {
+            uint256 etherAmount = etherDelta.toUint256();
+            key.currency0.take(poolManager, address(this), etherAmount, false);
+            entryPoint().depositTo{value: etherAmount}(address(this));
+        }
+        if (etherDelta < 0) {
+            uint256 etherAmount = (-etherDelta).toUint256();
+            entryPoint().withdrawTo(payable(address(this)), etherAmount);
+            key.currency0.settle(poolManager, address(this), etherAmount, false);
         }
 
-        if (currencyDelta < 0) {
-            // _withdrawFromYieldSource(currency, (-currencyDelta).toUint256());
-            currency.settle(poolManager, address(this), (-currencyDelta).toUint256(), false);
+        int256 tokenDelta = poolManager.currencyDelta(address(this), key.currency1);
+        if (tokenDelta > 0) {
+            uint256 tokenAmount = tokenDelta.toUint256();
+            key.currency1.take(poolManager, address(this), tokenAmount, false);
+        }
+        if (tokenDelta < 0) {
+            uint256 tokenAmount = (-tokenDelta).toUint256();
+            key.currency1.settle(poolManager, address(this), tokenAmount, false);
         }
     }
 
     /// @dev Get the uint256 token ID for a pool key.
     function poolKeyTokenId(PoolKey calldata poolKey) public pure returns (uint256) {
-        return uint256(PoolIdLibrary.unwrap(poolKey.toId()));
+        return uint256(PoolId.unwrap(poolKey.toId()));
     }
 }
