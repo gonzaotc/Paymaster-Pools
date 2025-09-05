@@ -323,8 +323,7 @@ contract PaymasterPool is ERC7535, MinimalPaymasterCore {
         virtual
         returns (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s)
     {
-        (value, deadline, v, r, s) =
-            abi.decode(paymasterData, (uint256, uint256, uint8, bytes32, bytes32));
+
     }
 
     /**

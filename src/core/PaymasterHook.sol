@@ -3,6 +3,7 @@ pragma solidity ^0.8.27;
 
 // External
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -54,6 +55,7 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     using ERC4337Utils for *;
     using SafeERC20 for IERC20;
     using SafeCast for *;
+    using ERC4337Utils for PackedUserOperation;
 
     /// @dev When initializing the hook, the currency0 must be native.
     error OnlyNativeCurrency();
@@ -104,6 +106,7 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// Note that currency0 must always be native, as only [ETH, token] pairs are supported.
     function _beforeInitialize(address, PoolKey calldata key, uint160)
         internal
+        pure
         override
         returns (bytes4)
     {
@@ -133,15 +136,15 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
 
     /// @dev Add hook-owned liquidity.
     /// @param params The parameters for adding liquidity.
-    /// @return delta The delta of the liquidity position.
     /// Note that currency0 is always native, and currency1 is always the paymaster pool supported token.
     /// Note that ETH is kept deposited in the entry point, while the token is kept in the hook balance.
+    // @TBD should take `liquidity` and convert it automatically to eth and
+    // "You're minting shares based solely on ETH deposited, ignoring token"
     function addLiquidity(AddLiquidityParams calldata params)
         public
         payable
         virtual
         onlyInitializedPool(params.poolKey)
-        returns (BalanceDelta delta)
     {
         if (params.amount0 != msg.value) revert InvalidNativeAmount();
 
@@ -159,13 +162,7 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
 
     /// @dev Remove hook-owned liquidity.
     /// @param params The parameters for removing liquidity.
-    /// @return delta The delta of the liquidity position.
-    function removeLiquidity(RemoveLiquidityParams calldata params)
-        public
-        payable
-        virtual
-        returns (BalanceDelta delta)
-    {
+    function removeLiquidity(RemoveLiquidityParams calldata params) public payable virtual {
         // burn liquidity shares
         _burn(params.sender, poolKeyTokenId(params.poolKey), ethToShares(params.amount0));
 
@@ -256,7 +253,7 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     }
 
     /// @dev Convert ETH to shares, default to 1:1 ETH:shares.
-    function ethToShares(uint256 eth) public view returns (uint256) {
+    function ethToShares(uint256 eth) public pure returns (uint256) {
         return eth;
     }
 
@@ -330,17 +327,113 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         bytes32 userOpHash,
         uint256 requiredPreFund
     ) internal virtual override returns (bytes memory context, uint256 validationData) {
-        // to be implemented
+        // Decode the paymaster data in order to obtain the PoolKey and permit parameters.
+        (PoolKey memory poolKey, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) =
+            abi.decode(userOp.paymasterData(), (PoolKey, uint256, uint256, uint8, bytes32, bytes32));
+
+        address token = Currency.unwrap(poolKey.currency1);
+
+        // Attempt to consume the permit signature, which may have been already consumed.
+        // We continue even if it has been already consumed, because the current allowance may be enough.
+        try IERC20Permit(token).permit(userOp.sender, address(this), value, deadline, v, r, s) {}
+            catch {}
+
+        // Get the token price in native currency from the pool
+        uint256 tokenPriceInETH = _getTokenPriceFromPool(poolKey);
+
+        // Convert the requiredPreFund to the token amount.
+        uint256 tokenAmount = _erc20Cost(requiredPreFund, userOp.maxFeePerGas(), tokenPriceInETH);
+
+        // Attempt to transfer the token from the user to the hook
+        try IERC20(token).transferFrom(userOp.sender, address(this), tokenAmount) {
+            return (
+                // Encode the validation context required for the postOp
+                abi.encodePacked(userOp.sender, token, tokenAmount, tokenPriceInETH),
+                ERC4337Utils.SIG_VALIDATION_SUCCESS
+            );
+        } catch {
+            return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
     }
 
     /// @dev Post the paymaster user operation.
     function _postOp(
         PostOpMode, /* mode */
-        bytes calldata, /* context */
-        uint256, /* actualGasCost */
-        uint256 /* actualUserOpFeePerGas */
+        bytes calldata context,
+        uint256 actualGasCost,
+        uint256 actualUserOpFeePerGas
     ) internal virtual override {
-        // to be implemented
+        (address userOpSender, address token, uint256 prefundTokenAmount, uint256 prefundTokenPriceETH) =
+            abi.decode(context, (address, address, uint256, uint256));
+
+        // Calculate the actual token amount spent by the user operation.
+        uint256 actualTokenAmount =
+            _erc20Cost(actualGasCost, actualUserOpFeePerGas, prefundTokenPriceETH);
+
+        // Refund the sender with the `acceptedToken` excess taken during the prefund in {_validatePaymasterUserOp}.
+        // Note: Since we prefunded with `maxCost`, an invariant is: prefundTokenAmount >= actualTokenAmount.
+        IERC20(token).trySafeTransfer(userOpSender, prefundTokenAmount - actualTokenAmount);
+    }
+
+    /// @dev Get the token price in ETH from the pool's current price.
+    /// @param poolKey The pool key for the ETH/token pair
+    /// @return tokenPriceInETH Price of 1 unit of token in ETH (scaled by _tokenPriceDenominator())
+    function _getTokenPriceFromPool(PoolKey memory poolKey)
+        internal
+        view
+        returns (uint256 tokenPriceInETH)
+    {
+        // Get the current sqrt price from the pool
+        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
+
+        // Ensure pool is initialized
+        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
+
+        // Get token decimals to properly scale the price
+        uint8 tokenDecimals = IERC20Metadata(Currency.unwrap(poolKey.currency1)).decimals();
+
+        // sqrtPriceX96 represents sqrt(price) where price = token1/token0
+        // Since token0 is ETH (18 decimals) and token1 is the token (tokenDecimals),
+        // price = (sqrtPriceX96 / 2^96)^2 gives us token1 amount per 1 token0
+        // We want: how much token1 do we need to get 1 ETH worth of value
+
+        // Calculate the actual price: token1 per token0
+        uint256 priceX192 = Math.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), 1);
+
+        // Convert to token price in ETH with proper scaling
+        // price = (priceX192 / 2^192) * (10^18 / 10^tokenDecimals)
+        // This gives us how many tokens equal 1 ETH
+        return Math.mulDiv(
+            priceX192,
+            10 ** 18 * _tokenPriceDenominator(),
+            (uint256(1) << 192) * 10 ** tokenDecimals
+        );
+    }
+
+    /// @dev Calculates the cost of the user operation in ERC-20 tokens.
+    /// @param cost Base cost in native currency
+    /// @param feePerGas Fee per gas unit
+    /// @param tokenPrice Price of token in native currency (scaled by _tokenPriceDenominator)
+    /// @return Token amount required to cover the operation cost
+    function _erc20Cost(uint256 cost, uint256 feePerGas, uint256 tokenPrice)
+        internal
+        view
+        virtual
+        returns (uint256)
+    {
+        return Math.mulDiv(cost + _postOpCost() * feePerGas, tokenPrice, _tokenPriceDenominator());
+    }
+
+    /// @dev Over-estimates the cost of the post-operation logic.
+    /// @return Gas units estimated for postOp execution
+    function _postOpCost() internal view virtual returns (uint256) {
+        return 30_000;
+    }
+
+    /// @dev Denominator used for interpreting the tokenPrice to avoid precision loss.
+    /// @return Scaling factor for fixed-point token price calculations (1e18)
+    function _tokenPriceDenominator() internal view virtual returns (uint256) {
+        return 1e18;
     }
 
     /**
@@ -349,7 +442,13 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
      *
      * @return permissions The hook permissions.
      */
-    function getHookPermissions() public pure virtual override returns (Hooks.Permissions memory permissions) {
+    function getHookPermissions()
+        public
+        pure
+        virtual
+        override
+        returns (Hooks.Permissions memory permissions)
+    {
         return Hooks.Permissions({
             beforeInitialize: true,
             afterInitialize: false,
