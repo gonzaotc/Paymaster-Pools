@@ -32,7 +32,7 @@ import {
 } from "v4-core/src/interfaces/IPoolManager.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
-import {LiquidityAmounts} from "v4-periphery/libraries/LiquidityAmounts.sol";
+import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
 import {PoolIdLibrary, PoolId} from "v4-core/src/types/PoolId.sol";
 
 // Internal
@@ -60,6 +60,9 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev When initializing the hook, the currency0 must be native.
     error OnlyNativeCurrency();
 
+    /// @dev The liquidity delta is zero.
+    error LiquidityDeltaZero();
+
     /// @dev Liquidity was attempted to be added or removed via the `PoolManager` instead of the hook.
     error LiquidityOnlyViaHook();
 
@@ -69,37 +72,17 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Pool was not initialized.
     error PoolNotInitialized();
 
-    /// @dev Parameters for adding liquidity.
-    /// @param sender The address of liquidity provider.
-    /// @param poolKey The key of the pool.
-    /// @param amount0 The amount of native currency to deposit.
-    /// @param amount1 The amount of token to deposit.
-    struct AddLiquidityParams {
-        address sender;
-        PoolKey poolKey;
-        uint256 amount0;
-        uint256 amount1;
-    }
+    /// @dev Event for adding liquidity.
+    event AddLiquidity(
+        address indexed sender, PoolKey indexed poolKey, uint256 amount0, uint256 amount1
+    );
 
-    /// @dev Parameters for removing liquidity.
-    /// @param sender The address of liquidity provider.
-    /// @param poolKey The key of the pool.
-    /// @param amount0 The amount of native currency to withdraw.
-    /// @param amount1 The amount of token to withdraw.
-    struct RemoveLiquidityParams {
-        address sender;
-        PoolKey poolKey;
-        uint256 amount0;
-        uint256 amount1;
-    }
+    /// @dev Event for removing liquidity.
+    event RemoveLiquidity(
+        address indexed sender, PoolKey indexed poolKey, uint256 amount0, uint256 amount1
+    );
 
-    /// @dev Check if the pool is initialized.
-    modifier onlyInitializedPool(PoolKey calldata poolKey) {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
-        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
-        _;
-    }
-
+    /// @dev Construct the BaseHook with the pool manager.
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     /// @dev Initialize the pool.
@@ -134,64 +117,84 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         revert LiquidityOnlyViaHook();
     }
 
+    // function modifyLiquidity(PoolKey calldata poolKey, int128 liquidityDelta)
+    //     public
+    //     payable
+    //     virtual
+    //     onlyInitializedPool(poolKey)
+    // {
+    //     if (liquidityDelta > 0) addLiquidity(poolKey, liquidityDelta);
+    //     if (liquidityDelta < 0) removeLiquidity(poolKey, -liquidityDelta);
+    //     revert LiquidityDeltaZero();
+    // }
+
     /// @dev Add hook-owned liquidity.
-    /// @param params The parameters for adding liquidity.
-    /// Note that currency0 is always native, and currency1 is always the paymaster pool supported token.
-    /// Note that ETH is kept deposited in the entry point, while the token is kept in the hook balance.
-    // @TBD should take `liquidity` and convert it automatically to eth and
-    // "You're minting shares based solely on ETH deposited, ignoring token"
-    function addLiquidity(AddLiquidityParams calldata params)
-        public
-        payable
-        virtual
-        onlyInitializedPool(params.poolKey)
-    {
-        if (params.amount0 != msg.value) revert InvalidNativeAmount();
+    /// @param poolKey the pool key to add the liquidity to.
+    /// @param liquidity The liquidity to add.
+    ///
+    /// NOTE: currency0 is always native, and currency1 is always the paymaster pool supported token.
+    /// NOTE: native currency is kept in the entry point, while the token is kept in the hook balance.
+    ///
+    function addLiquidity(PoolKey calldata poolKey, uint128 liquidity) public payable virtual {
+        if (address(poolKey.hooks) == address(0)) revert PoolNotInitialized();
+        if (liquidity == 0) revert LiquidityDeltaZero();
+
+        (uint256 amount0, uint256 amount1) = getAmountsForLiquidity(poolKey, liquidity);
+
+        if (amount0 != msg.value) revert InvalidNativeAmount();
 
         // Deposit the native currency to the entry point
-        entryPoint().depositTo{value: params.amount0}(address(this));
+        entryPoint().depositTo{value: amount0}(address(this));
 
         // transfer currency1 (token) from the sender to the hook, allowance is required.
-        IERC20(Currency.unwrap(params.poolKey.currency1)).safeTransferFrom(
-            params.sender, address(this), params.amount1
+        IERC20(Currency.unwrap(poolKey.currency1)).safeTransferFrom(
+            msg.sender, address(this), amount1
         );
 
         // mint liquidity shares to the sender
-        _mint(params.sender, poolKeyTokenId(params.poolKey), ethToShares(msg.value));
+        _mint(msg.sender, poolKeyTokenId(poolKey), liquidity);
+
+        emit AddLiquidity(msg.sender, poolKey, amount0, amount1);
     }
 
     /// @dev Remove hook-owned liquidity.
-    /// @param params The parameters for removing liquidity.
-    function removeLiquidity(RemoveLiquidityParams calldata params) public payable virtual {
+    /// @param poolKey the pool key to remove the liquidity from.
+    /// @param liquidity the liquidity to remove.
+    function removeLiquidity(PoolKey calldata poolKey, uint128 liquidity) public payable virtual {
+        if (address(poolKey.hooks) == address(0)) revert PoolNotInitialized();
+        if (liquidity == 0) revert LiquidityDeltaZero();
+
+        (uint256 amount0, uint256 amount1) = getAmountsForLiquidity(poolKey, liquidity);
+
         // burn liquidity shares
-        _burn(params.sender, poolKeyTokenId(params.poolKey), ethToShares(params.amount0));
+        _burn(msg.sender, poolKeyTokenId(poolKey), liquidity);
 
         // withdraw the native currency from the entry point to the sender
-        entryPoint().withdrawTo(payable(params.sender), params.amount0);
+        entryPoint().withdrawTo(payable(msg.sender), amount0);
 
         // transfer currency1 (token) from the hook to the sender.
-        IERC20(Currency.unwrap(params.poolKey.currency1)).safeTransfer(
-            params.sender, params.amount1
-        );
+        IERC20(Currency.unwrap(poolKey.currency1)).safeTransfer(msg.sender, amount1);
+
+        emit RemoveLiquidity(msg.sender, poolKey, amount0, amount1);
     }
 
     /// @dev Just-in-time liquidity provisioning
-    /// Creates an unique hook-owned liquidity position with all the hook balances,
-    /// providing both ETH and token for in-range liquidity.
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
-        internal
-        virtual
-        override
-        returns (bytes4, BeforeSwapDelta, uint24)
-    {
+    /// Creates an unique hook-owned liquidity position with the hook balances,
+    /// providing both ETH and token just-in-time for in-range liquidity.
+    function _beforeSwap(
+        address,
+        PoolKey calldata key,
+        SwapParams calldata, /* params */
+        bytes calldata /* hookData */
+    ) internal virtual override returns (bytes4, BeforeSwapDelta, uint24) {
         // 1. Ether balance is in the entry point
         uint256 ethBalance = entryPoint().balanceOf(address(this));
 
         // 2. Token balance is already in the hook
         uint256 tokenBalance = key.currency1.balanceOfSelf();
 
-        // 3. Calculate optimal liquidity for narrow range
-        uint128 liquidity = _liquidityForAmounts(key, ethBalance, tokenBalance);
+        // 3. Calculate the liquidity parameter for the given amounts
+        uint128 liquidity = getLiquidityForAmounts(key, ethBalance, tokenBalance);
 
         // 5. Create the hook liquidity position
         _modifyLiquidity(key, liquidity.toInt256());
@@ -201,13 +204,13 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
 
     /// @dev Remove the hook liquidity position and settle any pending deltas.
     function _afterSwap(
-        address sender,
+        address, /* sender */
         PoolKey calldata key,
-        SwapParams calldata params,
-        BalanceDelta delta,
-        bytes calldata hookData
+        SwapParams calldata, /* params */
+        BalanceDelta, /* delta */
+        bytes calldata /* hookData */
     ) internal virtual override returns (bytes4, int128) {
-        uint128 hookLiquidity = _getHookPositionLiquidity(key);
+        uint128 hookLiquidity = _getHookLiquidity(key);
 
         // Remove the hook liquidity position
         if (hookLiquidity != 0) _modifyLiquidity(key, -hookLiquidity.toInt256());
@@ -246,36 +249,60 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         return TickMath.maxUsableTick(poolKey.tickSpacing);
     }
 
-    /// @dev Returns the current tick in a math reliable way.
-    function getCurrentTick(PoolKey calldata poolKey) public view virtual returns (int24) {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
-        return TickMath.getTickAtSqrtPrice(sqrtPriceX96);
-    }
+    // /// @dev Returns the current tick in a math reliable way.
+    // function getCurrentTick(PoolKey calldata poolKey) public view virtual returns (int24) {
+    //     (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
+    //     return TickMath.getTickAtSqrtPrice(sqrtPriceX96);
+    // }
 
-    /// @dev Convert ETH to shares, default to 1:1 ETH:shares.
-    function ethToShares(uint256 eth) public pure returns (uint256) {
-        return eth;
-    }
+    /// @dev Convert liquidity to shares, default to 1:1 liquidity:shares.
+    // function liquidityToShares(uint256 liquidity) public pure returns (uint256) {
+    //     return liquidity;
+    // }
 
-    /// @dev Computes the maximum amount of liquidity received for a given amount of currency0 and currency1.
-    /// may be inefficien since it may leave some liquidity unused, to be checked.
-    function _liquidityForAmounts(PoolKey calldata poolKey, uint256 ethAmount, uint256 tokenAmount)
-        internal
+    /**
+     * @dev Calculates the amounts required for adding a specific amount of liquidity.
+     *
+     * This function uses the current pool state and desired liquidity to determine
+     * the exact amounts of both currencies needed to achieve the target liquidity.
+     *
+     */
+    function getAmountsForLiquidity(PoolKey calldata poolKey, uint128 liquidity)
+        public
         view
-        returns (uint128 liquidity)
+        virtual
+        returns (uint256 amount0, uint256 amount1)
     {
-        (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
-        return LiquidityAmounts.getLiquidityForAmounts(
-            sqrtPriceX96,
+        (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
+        return LiquidityAmounts.getAmountsForLiquidity(
+            currentSqrtPriceX96,
             TickMath.getSqrtPriceAtTick(getTickLower(poolKey)),
             TickMath.getSqrtPriceAtTick(getTickUpper(poolKey)),
-            ethAmount,
-            tokenAmount
+            liquidity
+        );
+    }
+
+    /**
+     * @dev Calculates the amount of liquidity required for a given amount of tokens.
+     */
+    function getLiquidityForAmounts(PoolKey calldata poolKey, uint256 amount0, uint256 amount1)
+        public
+        view
+        virtual
+        returns (uint128 liquidity)
+    {
+        (uint160 currentSqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
+        return LiquidityAmounts.getLiquidityForAmounts(
+            currentSqrtPriceX96,
+            TickMath.getSqrtPriceAtTick(getTickLower(poolKey)),
+            TickMath.getSqrtPriceAtTick(getTickUpper(poolKey)),
+            amount0,
+            amount1
         );
     }
 
     /// @dev Get the liquidity of the hook's position.
-    function _getHookPositionLiquidity(PoolKey calldata poolKey) internal view returns (uint128) {
+    function _getHookLiquidity(PoolKey calldata poolKey) internal view returns (uint128) {
         bytes32 positionKey = Position.calculatePositionKey(
             address(this), getTickLower(poolKey), getTickUpper(poolKey), bytes32(0)
         );
@@ -324,12 +351,17 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Validate the paymaster user operation.
     function _validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
-        bytes32 userOpHash,
+        bytes32, /* userOpHash */
         uint256 requiredPreFund
     ) internal virtual override returns (bytes memory context, uint256 validationData) {
         // Decode the paymaster data in order to obtain the PoolKey and permit parameters.
         (PoolKey memory poolKey, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) =
             abi.decode(userOp.paymasterData(), (PoolKey, uint256, uint256, uint8, bytes32, bytes32));
+
+        // If the pool is not initialized, revert the validation.
+        if (address(poolKey.hooks) == address(0)) {
+            return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
+        }
 
         address token = Currency.unwrap(poolKey.currency1);
 
@@ -363,8 +395,12 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
         uint256 actualGasCost,
         uint256 actualUserOpFeePerGas
     ) internal virtual override {
-        (address userOpSender, address token, uint256 prefundTokenAmount, uint256 prefundTokenPriceETH) =
-            abi.decode(context, (address, address, uint256, uint256));
+        (
+            address userOpSender,
+            address token,
+            uint256 prefundTokenAmount,
+            uint256 prefundTokenPriceETH
+        ) = abi.decode(context, (address, address, uint256, uint256));
 
         // Calculate the actual token amount spent by the user operation.
         uint256 actualTokenAmount =
@@ -378,6 +414,8 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Get the token price in ETH from the pool's current price.
     /// @param poolKey The pool key for the ETH/token pair
     /// @return tokenPriceInETH Price of 1 unit of token in ETH (scaled by _tokenPriceDenominator())
+    ///
+    /// NOTE: does not check if the pool is initialized.
     function _getTokenPriceFromPool(PoolKey memory poolKey)
         internal
         view
@@ -385,9 +423,6 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     {
         // Get the current sqrt price from the pool
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(poolKey.toId());
-
-        // Ensure pool is initialized
-        if (sqrtPriceX96 == 0) revert PoolNotInitialized();
 
         // Get token decimals to properly scale the price
         uint8 tokenDecimals = IERC20Metadata(Currency.unwrap(poolKey.currency1)).decimals();
@@ -413,15 +448,16 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     /// @dev Calculates the cost of the user operation in ERC-20 tokens.
     /// @param cost Base cost in native currency
     /// @param feePerGas Fee per gas unit
-    /// @param tokenPrice Price of token in native currency (scaled by _tokenPriceDenominator)
+    /// @param tokenPriceInETH Price of token in ETH (scaled by _tokenPriceDenominator)
     /// @return Token amount required to cover the operation cost
-    function _erc20Cost(uint256 cost, uint256 feePerGas, uint256 tokenPrice)
+    function _erc20Cost(uint256 cost, uint256 feePerGas, uint256 tokenPriceInETH)
         internal
         view
         virtual
         returns (uint256)
     {
-        return Math.mulDiv(cost + _postOpCost() * feePerGas, tokenPrice, _tokenPriceDenominator());
+        return
+            Math.mulDiv(cost + _postOpCost() * feePerGas, tokenPriceInETH, _tokenPriceDenominator());
     }
 
     /// @dev Over-estimates the cost of the post-operation logic.
