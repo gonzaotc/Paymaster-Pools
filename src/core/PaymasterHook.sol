@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.26;
 
 // External
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -116,17 +116,6 @@ contract PaymasterHook is MinimalPaymasterCore, BaseHook, ERC6909TokenSupply {
     ) internal virtual override returns (bytes4) {
         revert LiquidityOnlyViaHook();
     }
-
-    // function modifyLiquidity(PoolKey calldata poolKey, int128 liquidityDelta)
-    //     public
-    //     payable
-    //     virtual
-    //     onlyInitializedPool(poolKey)
-    // {
-    //     if (liquidityDelta > 0) addLiquidity(poolKey, liquidityDelta);
-    //     if (liquidityDelta < 0) removeLiquidity(poolKey, -liquidityDelta);
-    //     revert LiquidityDeltaZero();
-    // }
 
     /// @dev Add hook-owned liquidity.
     /// @param poolKey the pool key to add the liquidity to.
