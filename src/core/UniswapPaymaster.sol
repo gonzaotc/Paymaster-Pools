@@ -87,13 +87,13 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         bytes32, /* userOpHash */
         uint256 maxCost
     ) internal virtual override returns (bytes memory context, uint256 validationData) {
+        console.log("Paymaster - ValidatePaymasterUserOp");
         // Decode the paymaster data in order to obtain the PoolKey and permit parameters.
         (PoolKey memory poolKey, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) =
             abi.decode(userOp.paymasterData(), (PoolKey, uint256, uint256, uint8, bytes32, bytes32));
 
-        // If the pool is not initialized, or is not [ETH, token], return validation failed.
-        if (!poolKey.currency0.isAddressZero() || address(poolKey.hooks) == address(0)) {
-            console.log("Pool not initialized or not [ETH, token]");
+        // If the pool is not [ETH, token], return validation failed.
+        if (!poolKey.currency0.isAddressZero()) {
             return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
         }
 
@@ -101,14 +101,15 @@ contract UniswapPaymaster is MinimalPaymasterCore {
 
         // Attempt to consume the permit signature, which may have been already consumed.
         try IERC20Permit(token).permit(userOp.sender, address(this), value, deadline, v, r, s) {
-            console.log("Permit succeeded");
+            console.log("Paymaster - Permit succeeded");
         } catch {
-            console.log("Permit failed");
+            console.log("Paymaster - Permit failed");
             // since permit failed, verify allowance
             if (IERC20(token).allowance(userOp.sender, address(this)) < value) {
-                console.log("Allowance too low");
+                console.log("Paymaster - Allowance check failed");
                 return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
             }
+            console.log("Paymaster - Allowance check succeeded");
         }
 
         // Calculate the required ether prefund
@@ -117,24 +118,24 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         try manager.unlock(
             abi.encode(
                 CallbackData(
-                    msg.sender,
+                    userOp.sender, // Use userOp.sender, not msg.sender (which is EntryPoint)
                     poolKey,
                     SwapParams({
                         zeroForOne: false, // token -> ether
                         amountSpecified: int256(etherPrefund),
-                        sqrtPriceLimitX96: type(uint160).max // disable slippage protection for now
+                        sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1 // disable slippage protection for now
                     })
                 )
             )
         ) {
-            console.log("Swap succeeded");
+            console.log("Paymaster - Swap succeeded");
             return (
                 // Encode the validation context required for the postOp
                 abi.encodePacked(userOp.sender, etherPrefund),
                 ERC4337Utils.SIG_VALIDATION_SUCCESS
             );
         } catch {
-            console.log("Swap failed");
+            console.log("Paymaster - Swap failed");
             return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
         }
     }
@@ -146,8 +147,9 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         uint256 actualGasCost,
         uint256 actualUserOpFeePerGas
     ) internal virtual override {
+        console.log("Paymaster - PostOp");
         (address userOpSender, uint256 prefundedEther) = abi.decode(context, (address, uint256));
-        
+
         uint256 actualCostInETH = _ethCost(actualGasCost, actualUserOpFeePerGas);
 
         assert(prefundedEther >= actualCostInETH); // Should always be true
@@ -155,7 +157,14 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         // Send back any excess ether to the user
         if (prefundedEther > actualCostInETH) {
             // Send the excess ether to the user. Do not revert if the call fails.
-            payable(userOpSender).call{value: prefundedEther - actualCostInETH}("");
+            (bool success,) =
+                payable(userOpSender).call{value: prefundedEther - actualCostInETH}("");
+
+            if (!success) {
+                console.log("Paymaster - Refund failed");
+            } else {
+                console.log("Paymaster - Refund succeeded");
+            }
         }
     }
 
@@ -165,17 +174,22 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         onlyPoolManager
         returns (bytes memory)
     {
+        console.log("Paymaster - UnlockCallback");
         CallbackData memory data = abi.decode(rawData, (CallbackData));
         BalanceDelta delta = manager.swap(data.key, data.params, "");
+
+        console.log("Paymaster - unlockCallback - Swap succeeded");
 
         (Currency eth, Currency token) = (data.key.currency0, data.key.currency1);
 
         // Take the ether from the pool manager
+        console.log("Paymaster - Taking ether from the pool manager");
         int256 ethDelta = manager.currencyDelta(address(this), eth);
         assert(ethDelta > 0); // Should always be positive.
         eth.take(manager, data.sender, ethDelta.toUint256(), false);
 
         // Send the token to the pool manager
+        console.log("Paymaster - Sending token to the pool manager");
         int256 tokenDelta = manager.currencyDelta(address(this), token);
         assert(tokenDelta < 0); // Should always be negative.
         token.settle(manager, data.sender, (-tokenDelta).toUint256(), false);

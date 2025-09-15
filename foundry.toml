@@ -8,4 +8,6 @@ libs = ["lib"]
 [fmt]
 line_length = 100
 
+evm_version = "prague"
+
 
