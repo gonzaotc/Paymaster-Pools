@@ -14,6 +14,9 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
  * @dev Allows anyone to deposit native currency into the ERC-4337 EntryPoint and receive proportional shares
  * in return. Depositors can withdraw their funds at any time. Any profits generated are automatically distributed 
  * to share holders proportionally to their ownership. Inspired by and partially sharing interface with ERC-4626.
+ * 
+ * dear reader, I owe you the NatSpec for this contract functions, you can check the ERC-4626 docs until then; 
+ * https://docs.openzeppelin.com/contracts/5.x/api/token/erc20#ERC4626
  */ 
 contract EntryPointVault is ERC20 {
     using Math for uint256;
