@@ -131,9 +131,6 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
 
         // fund depositor
         vm.deal(depositor, 1e18);
-        // depositor funds the paymaster
-        vm.prank(depositor);
-        entryPoint.depositTo{value: 1e18}(address(paymaster));
 
         // give eth to lps
         vm.deal(lp1, 1e26);
@@ -299,11 +296,19 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     }
 
     function test_sponsor_user_operation() public {
+        // depositor funds the paymaster
+        uint256 depositorBalanceBefore = depositor.balance;
+        vm.prank(depositor);
+        paymaster.deposit{value: 1e18}(1e18, depositor);
+        assertEq(paymaster.balanceOf(depositor), 1e18);
+        assertEq(paymaster.totalSupply(), 1e18);
+
+        // paymaster should not have eth, and the entrypoint should now be funded.
         assertEq(address(paymaster).balance, 0);
         assertEq(entryPoint.balanceOf(address(paymaster)), 1e18);
 
-        // 0. Frist requirement: EOA must approve Permit2
-        // @tbd we MAY support both Permit1 and Permit2 to remove this step on ERC-2616 tokens.
+        // 0. Requirement from Permit2: EOA/Smart Account must approve Permit2
+        // @dev we MAY support both Permit1 and Permit2 to remove this step on ERC-2616 tokens.
         vm.prank(EOA);
         token.approve(address(permit2), type(uint256).max);
 
@@ -398,7 +403,6 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         console.log("bundler delta", bundlerDelta);
         console.log("entrypoint delta", entrypointDelta);
 
-        // 9. Verify results
         // Receiver should have received the tokens
         assertEq(token.balanceOf(receiver), 1e18);
 
@@ -408,7 +412,25 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         // Bundler should have made a profit.
         assertGt(bundlerBalanceAfter, bundlerBalanceBefore);
 
-        // Paymaster deposit should NOT have been decreased.
+        // Paymaster deposit should not have been decreased.
         assertGe(entrypointDepositAfter, entrypointDepositBefore);
+
+        // Depositor can withdraw their deposit
+        uint256 maxWithdraw = paymaster.maxWithdraw(depositor);
+        vm.prank(depositor);
+        paymaster.withdraw(maxWithdraw, depositor, depositor);
+        uint256 depositorBalanceAfter = depositor.balance;
+
+        int256 depositorDelta = int256(depositorBalanceAfter) - int256(depositorBalanceBefore);
+        console.log("depositor delta", depositorDelta);
+
+        // Depositor should not have lost any funds.
+        assertGe(depositorBalanceAfter, depositorBalanceBefore);
+
+        assertEq(paymaster.balanceOf(depositor), 0, 'Depositor shares != 0');
+        assertEq(paymaster.totalSupply(), 0, 'Paymaster total shares != 0');
+
+        // Due to vault inflation protection, the some dust is left in the entrypoint.
+        assertApproxEqAbs(entryPoint.balanceOf(address(paymaster)), 0, 1, 'Paymaster deposit != 0');
     }
 }

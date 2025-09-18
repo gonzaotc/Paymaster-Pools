@@ -9,7 +9,7 @@ import {
     ERC4337Utils,
     PackedUserOperation
 } from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-import {PostOpMode} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
+import {IEntryPoint} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {CurrencySettler} from "@openzeppelin/uniswap-hooks/utils/CurrencySettler.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
@@ -19,6 +19,7 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {SwapParams} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Permit2} from "permit2/Permit2.sol";
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
+
 // Internal
 import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
 import {EntryPointVault} from "src/core/EntryPointVault.sol";
@@ -185,6 +186,10 @@ contract UniswapPaymaster is MinimalPaymasterCore, EntryPointVault {
     /// @dev Over-estimates the cost of the post-operation logic
     function _postOpCost() internal pure returns (uint256) {
         return 30_000;
+    }
+
+    function entryPoint() public view virtual override(MinimalPaymasterCore, EntryPointVault) returns (IEntryPoint) {
+        return super.entryPoint();
     }
 
     /// @dev Allows the contract to temporarily receive ETH from the pool manager
