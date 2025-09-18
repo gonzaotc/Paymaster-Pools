@@ -137,16 +137,19 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         entryPoint.depositTo{value: 1e18}(address(paymaster));
 
         // give eth to lps
-        vm.deal(lp1, 1e20);
-        vm.deal(lp2, 1e20);
+        vm.deal(lp1, 1e26);
+        vm.deal(lp2, 1e26);
 
         // give token to lps
-        token.mint(lp1, 1e20);
-        token.mint(lp2, 1e20);
+        token.mint(lp1, 1e26);
+        token.mint(lp2, 1e26);
+
+        // add a big amount of liquidity
+        uint128 liquidityToAdd = 1e22;
 
         // get eth amounts for 1e18 liquidity
         (uint256 ethAmount,) =
-            getAmountsForLiquidity(manager, key, 1e18, _getTickLower(), _getTickUpper());
+            getAmountsForLiquidity(manager, key, liquidityToAdd, _getTickLower(), _getTickUpper());
         uint256 ethAmountPlusBuffer = ethAmount * 110 / 100; // 10% buffer, rest is refunded by the swap router
 
         // lp1 adds 1e18 liquidity
@@ -154,7 +157,7 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         token.approve(address(manager), type(uint256).max);
         token.approve(address(modifyLiquidityRouter), type(uint256).max);
         modifyLiquidityRouter.modifyLiquidity{value: ethAmountPlusBuffer}(
-            key, _liquidityParams(1e18), ""
+            key, _liquidityParams(int128(liquidityToAdd)), ""
         );
         vm.stopPrank();
 
@@ -163,7 +166,7 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         token.approve(address(manager), type(uint256).max);
         token.approve(address(modifyLiquidityRouter), type(uint256).max);
         modifyLiquidityRouter.modifyLiquidity{value: ethAmountPlusBuffer}(
-            key, _liquidityParams(1e18), ""
+            key, _liquidityParams(int128(liquidityToAdd)), ""
         );
         vm.stopPrank();
     }
@@ -313,86 +316,103 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         assertEq(balanceAfter - balanceBefore, exactAmount);
     }
 
-    // function test_sponsor_user_operation() public {
-    //     // 1. EOA has 1000 tokens but no eth.
-    //     token.mint(EOA, 1000e18);
+    function test_sponsor_user_operation() public {
+        console.log("Paymaster eth balance", address(paymaster).balance);
+        console.log("Entrypoint eth balance", address(entryPoint).balance);
 
-    //     // 2. Create gasless permit signature for paymaster
-    //     uint256 permitValue = type(uint256).max; // max for now
-    //     uint256 permitDeadline = block.timestamp + 1 hours;
-    //     (uint8 v, bytes32 r, bytes32 s) = _signPermit(
-    //         IERC20Permit(address(token)), // token
-    //         EOA, // sender
-    //         address(paymaster), // spender
-    //         permitValue, // value,
-    //         permitDeadline, // deadline
-    //         EOAPrivateKey // owner private key
-    //     );
+        // 0. Frist requirement: EOA must approve Permit2
+        // @tbd we MAY support both Permit1 and Permit2 to remove this step on ERC-2616 tokens.
+        vm.prank(EOA);
+        token.approve(address(permit2), type(uint256).max);
 
-    //     GasConfiguration memory gasConfig = GasConfiguration({
-    //         verificationGasLimit: 2_000_000,
-    //         callGasLimit: 2_000_000,
-    //         preVerificationGas: 2_000_000,
-    //         paymasterVerificationGasLimit: 2_000_000,
-    //         paymasterPostOpGasLimit: 2_000_000,
-    //         maxPriorityFeePerGas: 1 gwei,
-    //         maxFeePerGas: 2 gwei
-    //     });
+        // 1. EOA has 1000 tokens but no eth.
+        token.mint(EOA, 1000e18);
 
-    //     // 3. Build paymaster data
-    //     bytes memory paymasterData = buildPaymasterData(
-    //         address(paymaster), // paymaster
-    //         uint128(gasConfig.paymasterVerificationGasLimit), // verification gas limit
-    //         uint128(gasConfig.paymasterPostOpGasLimit), // post-op gas limit
-    //         key, // pool key
-    //         permitValue, // permit value
-    //         permitDeadline, // permit deadline
-    //         v, // permit signature (v)
-    //         r, // permit signature (r)
-    //         s // permit signature (s)
-    //     );
+        // 2. Delegate to the account
+        Vm.SignedDelegation memory signedDelegation =
+            vm.signDelegation(address(account), EOAPrivateKey);
+        vm.attachDelegation(signedDelegation);
 
-    //     // 4. Build calldata
-    //     bytes memory callData = abi.encodeWithSelector(
-    //         MinimalAccountECDSA.execute.selector,
-    //         address(token),
-    //         0,
-    //         abi.encodeWithSelector(token.transfer.selector, receiver, 1e18)
-    //     );
+        // 2. Create gasless permit2 signature for paymaster
+        IAllowanceTransfer.PermitSingle memory permitSingle = IAllowanceTransfer.PermitSingle({
+            details: IAllowanceTransfer.PermitDetails({
+                token: address(token),
+                amount: type(uint160).max, // Large allowance
+                expiration: uint48(block.timestamp + 1 hours), // 1 hour
+                nonce: 0
+            }),
+            spender: address(paymaster), // Paymaster gets permission
+            sigDeadline: uint48(block.timestamp + 1 hours) // 1 hour
+        });
+        bytes memory signature = _signPermit2Allowance(permit2, EOAPrivateKey, permitSingle);
 
-    //     // 5. Build UserOperation
-    //     PackedUserOperation memory userOp = buildUserOp(
-    //         EOA,
-    //         account.getNonce(),
-    //         callData,
-    //         paymasterData,
-    //         gasConfig.verificationGasLimit,
-    //         gasConfig.callGasLimit,
-    //         gasConfig.preVerificationGas,
-    //         gasConfig.maxPriorityFeePerGas,
-    //         gasConfig.maxFeePerGas
-    //     );
+        GasConfiguration memory gasConfig = GasConfiguration({
+            preVerificationGas: 50_000, // Extra gas to pay the bundler operational costs such as bundle tx cost and entrypoint static code execution.
+            verificationGasLimit: 75_000, // The amount of gas to allocate for the verification step
+            paymasterVerificationGasLimit: 300_000, // The amount of gas to allocate for the paymaster validation code (only if paymaster exists)
+            paymasterPostOpGasLimit: 50_000, // The amount of gas to allocate for the paymaster post-operation code (only if paymaster exists)
+            callGasLimit: 50_000, // The amount of gas to allocate the main execution call
+            maxPriorityFeePerGas: 1 gwei, // Maximum priority fee per gas (similar to EIP-1559 max_priority_fee_per_gas)
+            maxFeePerGas: 1 gwei // Maximum fee per gas (similar to EIP-1559 max_fee_per_gas)
+        });
 
-    //     // 6. Sign UserOperation
-    //     userOp = this.signUserOp(userOp, EOAPrivateKey, address(entryPoint));
+        // 3. Build paymaster data
+        bytes memory paymasterData = buildPaymasterData(
+            address(paymaster), // paymaster
+            uint128(gasConfig.paymasterVerificationGasLimit), // verification gas limit
+            uint128(gasConfig.paymasterPostOpGasLimit), // post-op gas limit
+            key, // pool key
+            permitSingle, // permit single
+            signature // signature
+        );
 
-    //     // 7. Execute the user operation
-    //     PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
-    //     userOps[0] = userOp;
+        // 4. Build calldata
+        bytes memory callData = abi.encodeWithSelector(
+            MinimalAccountEIP7702.execute.selector,
+            address(token),
+            0,
+            abi.encodeWithSelector(token.transfer.selector, receiver, 1e18)
+        );
 
-    //     console.log("Sponsoring!");
-    //     vm.startPrank(bundler);
+        // 5. Build UserOperation
+        PackedUserOperation memory userOp = buildUserOp(
+            EOA,
+            MinimalAccountEIP7702(payable(EOA)).getNonce(),
+            callData,
+            paymasterData,
+            gasConfig.verificationGasLimit,
+            gasConfig.callGasLimit,
+            gasConfig.preVerificationGas,
+            gasConfig.maxPriorityFeePerGas,
+            gasConfig.maxFeePerGas
+        );
 
-    //     vm.expectEmit(true, true, true, true);
-    //     emit IERC20.Transfer(address(account), receiver, 1e18);
-    //     IEntryPoint(address(entryPoint)).handleOps(userOps, payable(bundler));
-    //     vm.stopPrank();
-    //     console.log("Sponsoring done!");
+        // 6. Sign UserOperation
+        userOp = this.signUserOp(userOp, EOAPrivateKey, address(entryPoint));
 
-    //     // 9. Verify results
-    //     // Receiver should have received the tokens
-    //     assertEq(token.balanceOf(receiver), 1e18);
-    //     // Account should have less tokens (1e18 transferred out)
-    //     assertEq(token.balanceOf(address(account)), 999e18);
-    // }
+        // 7. Execute the user operation
+        PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
+        userOps[0] = userOp;
+
+        uint256 balanceBefore = token.balanceOf(address(EOA));
+
+        console.log("Sponsoring!");
+        vm.startPrank(bundler);
+
+        vm.expectEmit(true, true, true, true);
+        emit IERC20.Transfer(EOA, receiver, 1e18);
+        IEntryPoint(address(entryPoint)).handleOps(userOps, payable(bundler));
+        vm.stopPrank();
+        console.log("Sponsoring done!");
+
+        // check the paymaster eth balance
+        console.log("Paymaster eth balance", address(paymaster).balance);
+        console.log("Entrypoint eth balance", address(entryPoint).balance);
+
+        // 9. Verify results
+        // Receiver should have received the tokens
+        assertEq(token.balanceOf(receiver), 1e18);
+        // Account should have less tokens (1e18 transferred out)
+        // assertEq(token.balanceOf(address(EOA)), balanceBefore - 1e18);
+    }
 }

@@ -71,11 +71,13 @@ contract UniswapPaymaster is MinimalPaymasterCore {
     function _validatePaymasterUserOp(
         PackedUserOperation calldata userOp,
         bytes32, /* userOpHash */
-        uint256 maxCost
+        uint256 maxCost // measured in Wei
+        // maxCost = (verificationGasLimit + callGasLimit + paymasterVerificationGasLimit
+        //           + paymasterPostOpGasLimit + preVerificationGas) * maxFeePerGas
     ) internal virtual override returns (bytes memory context, uint256 validationData) {
         console.log("_validatePaymasterUserOp");
         console.log("Paymaster eth balance", address(this).balance);
-        console.log("Entrypoint eth balance", entryPoint().balanceOf(address(this)));
+        console.log("Entrypoint eth deposit", entryPoint().balanceOf(address(this)));
 
         // Decode the paymaster data to obtain PoolKey and AllowanceTransfer permit
         (
@@ -102,7 +104,7 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         }
 
         // Calculate the required ether prefund
-        console.log("_validatePaymasterUserOp - Ether Prefund", maxCost);
+        console.log("_validatePaymasterUserOp - maxCost", maxCost);
 
         try manager.unlock(
             abi.encode(
@@ -137,10 +139,13 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         CallbackData memory data = abi.decode(rawData, (CallbackData));
 
         BalanceDelta swapDelta = manager.swap(data.key, data.params, "");
+        console.log("swapDelta amount0", swapDelta.amount0().toUint256());
+        console.log("swapDelta amount1", (-(swapDelta.amount1())).toUint256());
 
         // Calculate exact amount of tokens needed for the swap
         uint256 tokenAmountIn = (-(swapDelta.amount1())).toUint256();
 
+        console.log("taking tokens from user", tokenAmountIn);
         // Transfer the exact tokens needed from user using our established allowance
         // This is the magic! User signed a permit for large amount, we transfer exact amount needed
         permit2.transferFrom(
@@ -150,9 +155,11 @@ contract UniswapPaymaster is MinimalPaymasterCore {
             Currency.unwrap(data.key.currency1) // token: the token address
         );
 
+        console.log("settling tokens to the pool manager", tokenAmountIn);
         // Settle the tokens with pool manager
         data.key.currency1.settle(manager, address(this), tokenAmountIn, false);
 
+        console.log("taking ether from the pool manager", swapDelta.amount0().toUint256());
         // Take the ether from the pool manager to this paymaster's balance
         data.key.currency0.take(manager, address(this), swapDelta.amount0().toUint256(), false);
 
@@ -163,24 +170,21 @@ contract UniswapPaymaster is MinimalPaymasterCore {
     function _postOp(
         PostOpMode, /* mode */
         bytes calldata context,
-        uint256 actualGasCost,
+        uint256 actualGasCost, // measured in Wei
         uint256 /* actualUserOpFeePerGas */
     ) internal virtual override {
+        console.log("PostOp");
         (address userOpSender, uint256 maxCost) = abi.decode(context, (address, uint256));
 
         console.log("Prefunded maxCost", maxCost);
         console.log("Actual Gas Cost", actualGasCost);
 
-        console.log("Paymaster balance", address(this).balance);
-        console.log("Entrypoint balance", entryPoint().balanceOf(address(this)));
-
-        require(maxCost >= actualGasCost, "maxCost < actualGasCost"); // Should always be true
+        console.log("Paymaster eth balance", address(this).balance);
+        console.log("Entrypoint eth deposit", entryPoint().balanceOf(address(this)));
 
         uint256 excess = maxCost - actualGasCost;
 
         console.log("PostOp - excess ether", excess);
-
-        require(address(this).balance >= excess, "balance < excess");
 
         // Send back any excess ether to the user
         if (excess > 0) {
@@ -195,12 +199,13 @@ contract UniswapPaymaster is MinimalPaymasterCore {
             }
         }
 
-        // add the eth delta to the entrypoint
+        // Replenish the EntryPoint deposit with the actual gas cost
+        // This ensures the paymaster can pay for future operations
         entryPoint().depositTo{value: actualGasCost}(address(this));
 
-        console.log("PostOp - Paymaster balance after deposit", address(this).balance);
+        console.log("PostOp - Paymaster eth balance after deposit", address(this).balance);
         console.log(
-            "PostOp - Entrypoint balance after deposit", entryPoint().balanceOf(address(this))
+            "PostOp - Entrypoint eth deposit after deposit", entryPoint().balanceOf(address(this))
         );
 
         console.log("PostOp - finished");
