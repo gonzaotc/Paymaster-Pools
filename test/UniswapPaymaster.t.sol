@@ -317,8 +317,8 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     }
 
     function test_sponsor_user_operation() public {
-        console.log("Paymaster eth balance", address(paymaster).balance);
-        console.log("Entrypoint eth balance", address(entryPoint).balance);
+        assertEq(address(paymaster).balance, 0);
+        assertEq(entryPoint.balanceOf(address(paymaster)), 1e18);
 
         // 0. Frist requirement: EOA must approve Permit2
         // @tbd we MAY support both Permit1 and Permit2 to remove this step on ERC-2616 tokens.
@@ -394,25 +394,40 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         PackedUserOperation[] memory userOps = new PackedUserOperation[](1);
         userOps[0] = userOp;
 
-        uint256 balanceBefore = token.balanceOf(address(EOA));
+        uint256 bundlerBalanceBefore = bundler.balance;
+        uint256 entrypointDepositBefore = entryPoint.balanceOf(address(paymaster));
 
         console.log("Sponsoring!");
         vm.startPrank(bundler);
-
         vm.expectEmit(true, true, true, true);
         emit IERC20.Transfer(EOA, receiver, 1e18);
         IEntryPoint(address(entryPoint)).handleOps(userOps, payable(bundler));
         vm.stopPrank();
         console.log("Sponsoring done!");
 
-        // check the paymaster eth balance
-        console.log("Paymaster eth balance", address(paymaster).balance);
-        console.log("Entrypoint eth balance", address(entryPoint).balance);
+        uint256 paymasterBalanceAfter = address(paymaster).balance;
+        uint256 bundlerBalanceAfter = bundler.balance;
+        uint256 entrypointDepositAfter = entryPoint.balanceOf(address(paymaster));
+        uint256 bundlerPlusEntrypointBalance = bundlerBalanceAfter + entrypointDepositAfter;
+
+        int256 bundlerDelta = int256(bundlerBalanceAfter) - int256(bundlerBalanceBefore);
+        int256 entrypointDelta = int256(entrypointDepositAfter) - int256(entrypointDepositBefore);
+
+        console.log("paymaster balance after", paymasterBalanceAfter);
+        console.log("bundler delta", bundlerDelta);
+        console.log("entrypoint delta", entrypointDelta);
 
         // 9. Verify results
         // Receiver should have received the tokens
         assertEq(token.balanceOf(receiver), 1e18);
-        // Account should have less tokens (1e18 transferred out)
-        // assertEq(token.balanceOf(address(EOA)), balanceBefore - 1e18);
+
+        // Paymaster should not have any eth.
+        assertEq(paymasterBalanceAfter, 0);
+
+        // Bundler should have made a profit.
+        assertGt(bundlerBalanceAfter, bundlerBalanceBefore);
+
+        // Paymaster deposit should NOT have been decreased.
+        assertGe(entrypointDepositAfter, entrypointDepositBefore);
     }
 }
