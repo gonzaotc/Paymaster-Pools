@@ -3,10 +3,16 @@
 pragma solidity ^0.8.27;
 
 import {Account} from "@openzeppelin/contracts/account/Account.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {ERC7739} from "@openzeppelin/contracts/utils/cryptography/signers/draft-ERC7739.sol";
 import {SignerECDSA} from "@openzeppelin/contracts/utils/cryptography/signers/SignerECDSA.sol";
-import {SignerERC7702} from "@openzeppelin/contracts/utils/cryptography/signers/SignerERC7702.sol";
 
-contract SimpleEIP7702Account is Account, SignerERC7702 {
+// Test
+import {console} from "forge-std/console.sol";
+
+contract MinimalAccountECDSA is Account, EIP712, ERC7739, SignerECDSA {
+    constructor(address signer) EIP712("MyAccount", "1") SignerECDSA(signer) {}
+
     function execute(address target, uint256 value, bytes calldata data)
         external
         onlyEntryPointOrSelf

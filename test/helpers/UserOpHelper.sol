@@ -6,6 +6,8 @@ import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {ISignatureTransfer} from "permit2/interfaces/ISignatureTransfer.sol";
+import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 
 /**
  * @title UserOpHelper
@@ -45,24 +47,21 @@ contract UserOpHelper is Test {
     }
 
     /**
-     * @dev Builds paymaster data for the UniswapPaymaster
+     * @dev Builds paymaster data for the UniswapPaymaster using Permit2 AllowanceTransfer
      */
     function buildPaymasterData(
         address paymaster,
         uint128 paymasterVerificationGasLimit,
         uint128 paymasterPostOpGasLimit,
         PoolKey memory poolKey,
-        uint256 value,
-        uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
+        IAllowanceTransfer.PermitSingle memory permitSingle,
+        bytes memory signature
     ) public pure returns (bytes memory) {
         return abi.encodePacked(
             paymaster,
             paymasterVerificationGasLimit,
             paymasterPostOpGasLimit,
-            abi.encode(poolKey, value, deadline, v, r, s)
+            abi.encode(poolKey, permitSingle, signature)
         );
     }
 
@@ -75,8 +74,7 @@ contract UserOpHelper is Test {
         returns (PackedUserOperation memory signedUserOp)
     {
         bytes32 userOpHash = userOp.hash(entryPoint);
-        bytes32 ethSignedMessageHash = userOpHash.toEthSignedMessageHash();
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, ethSignedMessageHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, userOpHash);
 
         return PackedUserOperation({
             sender: userOp.sender,

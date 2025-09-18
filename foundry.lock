@@ -1,0 +1,20 @@
+{
+  "lib/account-abstraction": {
+    "rev": "4cbc06072cdc19fd60f285c5997f4f7f57a588de"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "c64a1edb67b6e3f4a15cca8909c9482ad33a02b0"
+  },
+  "lib/permit2": {
+    "branch": {
+      "name": "main",
+      "rev": "cc56ad0f3439c502c246fc5cfcc3db92bb8b7219"
+    }
+  },
+  "lib/permit2.git": {
+    "rev": "a263047c740b355cd6e97ed4074ca8e1d8ca153c"
+  },
+  "lib/uniswap-hooks": {
+    "rev": "e59fe72c110c3862eec9b332530dce49ca506bbb"
+  }
+}

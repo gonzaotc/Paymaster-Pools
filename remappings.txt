@@ -4,6 +4,7 @@
 forge-std/=lib/forge-std/src/
 v4-core/=lib/v4-core/
 v4-periphery/=lib/v4-periphery/src/
+permit2/=lib/permit2/src/
 account-abstraction/contracts/=lib/account-abstraction/contracts/
 @axelar-network/axelar-gmp-sdk-solidity/=lib/openzeppelin-community-contracts/lib/axelar-gmp-sdk-solidity/
 @ensdomains/=lib/v4-core/node_modules/@ensdomains/

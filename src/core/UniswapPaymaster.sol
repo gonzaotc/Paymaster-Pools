@@ -3,38 +3,22 @@ pragma solidity ^0.8.26;
 
 // External
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
-import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
-import {ERC6909TokenSupply} from
-    "@openzeppelin/contracts/token/ERC6909/extensions/draft-ERC6909TokenSupply.sol";
 import {
     ERC4337Utils,
     PackedUserOperation
 } from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
-
-import {BaseHook} from "@openzeppelin/uniswap-hooks/base/BaseHook.sol";
 import {CurrencySettler} from "@openzeppelin/uniswap-hooks/utils/CurrencySettler.sol";
-
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
-import {Position} from "v4-core/src/libraries/Position.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
-import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {Hooks} from "v4-core/src/libraries/Hooks.sol";
-import {
-    IPoolManager,
-    BalanceDelta,
-    ModifyLiquidityParams,
-    SwapParams
-} from "v4-core/src/interfaces/IPoolManager.sol";
-import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/src/types/BeforeSwapDelta.sol";
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {BalanceDelta} from "v4-core/src/interfaces/IPoolManager.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
-import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
-import {PoolIdLibrary, PoolId} from "v4-core/src/types/PoolId.sol";
-
+import {SwapParams} from "v4-core/src/interfaces/IPoolManager.sol";
+import {Permit2} from "permit2/Permit2.sol";
+import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 // Internal
 import {MinimalPaymasterCore} from "src/core/MinimalPaymasterCore.sol";
 
@@ -59,9 +43,11 @@ contract UniswapPaymaster is MinimalPaymasterCore {
     using SafeCast for *;
 
     IPoolManager public immutable manager;
+    Permit2 public immutable permit2;
 
-    constructor(IPoolManager _manager) {
+    constructor(IPoolManager _manager, Permit2 _permit2) {
         manager = _manager;
+        permit2 = _permit2;
     }
 
     // Revert if the caller is not the pool manager.
@@ -87,33 +73,36 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         bytes32, /* userOpHash */
         uint256 maxCost
     ) internal virtual override returns (bytes memory context, uint256 validationData) {
-        console.log("Paymaster - ValidatePaymasterUserOp");
-        // Decode the paymaster data in order to obtain the PoolKey and permit parameters.
-        (PoolKey memory poolKey, uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) =
-            abi.decode(userOp.paymasterData(), (PoolKey, uint256, uint256, uint8, bytes32, bytes32));
+        console.log("_validatePaymasterUserOp");
+        console.log("Paymaster eth balance", address(this).balance);
+        console.log("Entrypoint eth balance", entryPoint().balanceOf(address(this)));
 
-        // If the pool is not [ETH, token], return validation failed.
-        if (!poolKey.currency0.isAddressZero()) {
+        // Decode the paymaster data to obtain PoolKey and AllowanceTransfer permit
+        (
+            PoolKey memory poolKey,
+            IAllowanceTransfer.PermitSingle memory permitSingle,
+            bytes memory signature
+        ) = abi.decode(userOp.paymasterData(), (PoolKey, IAllowanceTransfer.PermitSingle, bytes));
+
+        if (
+            !poolKey.currency0.isAddressZero() // the pool is not [ETH, token]
+                || permitSingle.details.token != Currency.unwrap(poolKey.currency1) // the token mismatch
+                || permitSingle.spender != address(this) // the spender is not this paymaster
+                || permitSingle.sigDeadline < block.timestamp // the signature is expired
+                || permitSingle.details.expiration < block.timestamp // the permit is expired
+        ) {
             return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
         }
 
-        address token = Currency.unwrap(poolKey.currency1);
-
-        // Attempt to consume the permit signature, which may have been already consumed.
-        try IERC20Permit(token).permit(userOp.sender, address(this), value, deadline, v, r, s) {
-            console.log("Paymaster - Permit succeeded");
-        } catch {
-            console.log("Paymaster - Permit failed");
-            // since permit failed, verify allowance
-            if (IERC20(token).allowance(userOp.sender, address(this)) < value) {
-                console.log("Paymaster - Allowance check failed");
-                return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
-            }
-            console.log("Paymaster - Allowance check succeeded");
+        // Establish the allowance using the signed permit
+        // This gives our paymaster permission to transfer tokens from the user later
+        try permit2.permit(userOp.sender, permitSingle, signature) {}
+        catch {
+            return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
         }
 
         // Calculate the required ether prefund
-        uint256 etherPrefund = _ethCost(maxCost, userOp.maxFeePerGas());
+        console.log("_validatePaymasterUserOp - Ether Prefund", maxCost);
 
         try manager.unlock(
             abi.encode(
@@ -122,22 +111,52 @@ contract UniswapPaymaster is MinimalPaymasterCore {
                     poolKey,
                     SwapParams({
                         zeroForOne: false, // token -> ether
-                        amountSpecified: int256(etherPrefund),
+                        amountSpecified: int256(maxCost), // specific output
                         sqrtPriceLimitX96: TickMath.MAX_SQRT_PRICE - 1 // disable slippage protection for now
                     })
                 )
             )
         ) {
-            console.log("Paymaster - Swap succeeded");
             return (
                 // Encode the validation context required for the postOp
-                abi.encodePacked(userOp.sender, etherPrefund),
+                abi.encode(userOp.sender, maxCost),
                 ERC4337Utils.SIG_VALIDATION_SUCCESS
             );
         } catch {
-            console.log("Paymaster - Swap failed");
+            // If the swap fails, return validation failed.
             return (bytes(""), ERC4337Utils.SIG_VALIDATION_FAILED);
         }
+    }
+
+    // Called back by the pool manager after the swap is init.
+    function unlockCallback(bytes calldata rawData)
+        external
+        onlyPoolManager
+        returns (bytes memory)
+    {
+        CallbackData memory data = abi.decode(rawData, (CallbackData));
+
+        BalanceDelta swapDelta = manager.swap(data.key, data.params, "");
+
+        // Calculate exact amount of tokens needed for the swap
+        uint256 tokenAmountIn = (-(swapDelta.amount1())).toUint256();
+
+        // Transfer the exact tokens needed from user using our established allowance
+        // This is the magic! User signed a permit for large amount, we transfer exact amount needed
+        permit2.transferFrom(
+            data.sender, // from: user who signed the permit
+            address(this), // to: this paymaster
+            uint160(tokenAmountIn), // amount: exact amount needed (cast to uint160)
+            Currency.unwrap(data.key.currency1) // token: the token address
+        );
+
+        // Settle the tokens with pool manager
+        data.key.currency1.settle(manager, address(this), tokenAmountIn, false);
+
+        // Take the ether from the pool manager to this paymaster's balance
+        data.key.currency0.take(manager, address(this), swapDelta.amount0().toUint256(), false);
+
+        return abi.encode(swapDelta);
     }
 
     /// @dev Refunds the user with any excess ether
@@ -145,77 +164,51 @@ contract UniswapPaymaster is MinimalPaymasterCore {
         PostOpMode, /* mode */
         bytes calldata context,
         uint256 actualGasCost,
-        uint256 actualUserOpFeePerGas
+        uint256 /* actualUserOpFeePerGas */
     ) internal virtual override {
-        console.log("Paymaster - PostOp");
-        (address userOpSender, uint256 prefundedEther) = abi.decode(context, (address, uint256));
+        (address userOpSender, uint256 maxCost) = abi.decode(context, (address, uint256));
 
-        uint256 actualCostInETH = _ethCost(actualGasCost, actualUserOpFeePerGas);
+        console.log("Prefunded maxCost", maxCost);
+        console.log("Actual Gas Cost", actualGasCost);
 
-        assert(prefundedEther >= actualCostInETH); // Should always be true
+        console.log("Paymaster balance", address(this).balance);
+        console.log("Entrypoint balance", entryPoint().balanceOf(address(this)));
+
+        require(maxCost >= actualGasCost, "maxCost < actualGasCost"); // Should always be true
+
+        uint256 excess = maxCost - actualGasCost;
+
+        console.log("PostOp - excess ether", excess);
+
+        require(address(this).balance >= excess, "balance < excess");
 
         // Send back any excess ether to the user
-        if (prefundedEther > actualCostInETH) {
+        if (excess > 0) {
+            console.log("PostOp - sending excess ether to the user");
             // Send the excess ether to the user. Do not revert if the call fails.
-            (bool success,) =
-                payable(userOpSender).call{value: prefundedEther - actualCostInETH}("");
+            (bool success,) = payable(userOpSender).call{value: excess}("");
 
-            if (!success) {
-                console.log("Paymaster - Refund failed");
+            if (success) {
+                console.log("PostOp - Refund succeeded");
             } else {
-                console.log("Paymaster - Refund succeeded");
+                console.log("PostOp - Refund failed");
             }
         }
+
+        // add the eth delta to the entrypoint
+        entryPoint().depositTo{value: actualGasCost}(address(this));
+
+        console.log("PostOp - Paymaster balance after deposit", address(this).balance);
+        console.log(
+            "PostOp - Entrypoint balance after deposit", entryPoint().balanceOf(address(this))
+        );
+
+        console.log("PostOp - finished");
     }
 
-    // Called back by the pool manager after the swap.
-    function unlockCallback(bytes calldata rawData)
-        external
-        onlyPoolManager
-        returns (bytes memory)
-    {
-        console.log("Paymaster - UnlockCallback");
-        CallbackData memory data = abi.decode(rawData, (CallbackData));
-        BalanceDelta delta = manager.swap(data.key, data.params, "");
-
-        console.log("Paymaster - unlockCallback - Swap succeeded");
-
-        (Currency eth, Currency token) = (data.key.currency0, data.key.currency1);
-
-        // Take the ether from the pool manager
-        console.log("Paymaster - Taking ether from the pool manager");
-        int256 ethDelta = manager.currencyDelta(address(this), eth);
-        assert(ethDelta > 0); // Should always be positive.
-        eth.take(manager, data.sender, ethDelta.toUint256(), false);
-
-        // Send the token to the pool manager
-        console.log("Paymaster - Sending token to the pool manager");
-        int256 tokenDelta = manager.currencyDelta(address(this), token);
-        assert(tokenDelta < 0); // Should always be negative.
-        token.settle(manager, data.sender, (-tokenDelta).toUint256(), false);
-
-        return abi.encode(delta);
-    }
-
-    /// @dev Calculates the cost of the user operation in ETH
-    function _ethCost(uint256 cost, uint256 feePerGas) internal view virtual returns (uint256) {
-        return cost + _postOpCost() * feePerGas;
-    }
-
-    /// @dev Over-estimates the cost of the post-operation logic.
-    /// @return Gas units estimated for postOp execution
-    function _postOpCost() internal view virtual returns (uint256) {
-        return 30_000;
-    }
-
-    /// @dev Denominator used for interpreting the tokenPrice to avoid precision loss.
-    /// @return Scaling factor for fixed-point token price calculations (1e18)
-    function _tokenPriceDenominator() internal view virtual returns (uint256) {
-        return 1e18;
-    }
-
-    /// @dev Get the token price in ETH.
-    function _getTokenPrice() internal pure returns (uint256) {
-        return 1e18;
-    }
+    /**
+     * @dev Allows the contract to receive ETH from the pool manager
+     * @notice This is needed to receive the ETH from the pool manager.
+     */
+    receive() external payable {}
 }

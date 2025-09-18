@@ -10,8 +10,18 @@ import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
 
+// Permit2 imports
+import {ISignatureTransfer} from "permit2/interfaces/ISignatureTransfer.sol";
+import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
+import {Permit2} from "permit2/Permit2.sol";
+
 contract TestingUtils is Test {
     using StateLibrary for IPoolManager;
+
+    // Permit2 constants
+    bytes32 public constant _PERMIT_SINGLE_TYPEHASH = keccak256(
+        "PermitSingle(PermitDetails details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
+    );
 
     function _signPermit(
         IERC20Permit token,
@@ -36,6 +46,45 @@ contract TestingUtils is Test {
 
         // Sign the hash with the private key
         return vm.sign(privateKey, hash);
+    }
+
+    /**
+     * @dev Signs a Permit2 AllowanceTransfer permit (flexible amount)
+     * @param permit2 The Permit2 contract instance to get domain separator
+     * @param privateKey The private key to sign with
+     * @param permitSingle The PermitSingle struct to sign
+     * @return signature The packed signature bytes (r, s, v)
+     */
+    function _signPermit2Allowance(
+        Permit2 permit2,
+        uint256 privateKey,
+        IAllowanceTransfer.PermitSingle memory permitSingle
+    ) internal view returns (bytes memory signature) {
+        bytes32 domainSeparator = permit2.DOMAIN_SEPARATOR();
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                _PERMIT_SINGLE_TYPEHASH,
+                keccak256(
+                    abi.encode(
+                        keccak256(
+                            "PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)"
+                        ),
+                        permitSingle.details.token,
+                        permitSingle.details.amount,
+                        permitSingle.details.expiration,
+                        permitSingle.details.nonce
+                    )
+                ),
+                permitSingle.spender,
+                permitSingle.sigDeadline
+            )
+        );
+
+        bytes32 hash = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, hash);
+        return abi.encodePacked(r, s, v);
     }
 
     function getAmountsForLiquidity(
