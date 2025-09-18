@@ -6,9 +6,6 @@ import {Account} from "@openzeppelin/contracts/account/Account.sol";
 import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 import {SignerECDSA} from "@openzeppelin/contracts/utils/cryptography/signers/SignerECDSA.sol";
 
-// Test
-import {console} from "forge-std/console.sol";
-
 contract MinimalAccountECDSA is Account, IERC1271, SignerECDSA {
     constructor(address signer) SignerECDSA(signer) {}
 
@@ -18,9 +15,10 @@ contract MinimalAccountECDSA is Account, IERC1271, SignerECDSA {
         override
         returns (bytes4)
     {
-        return _rawSignatureValidation(hash, signature) ? IERC1271.isValidSignature.selector : bytes4(0xffffffff);
+        return _rawSignatureValidation(hash, signature)
+            ? IERC1271.isValidSignature.selector
+            : bytes4(0xffffffff);
     }
-
 
     function execute(address target, uint256 value, bytes calldata data)
         external

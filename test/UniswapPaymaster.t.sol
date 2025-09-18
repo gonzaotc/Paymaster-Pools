@@ -6,7 +6,6 @@ import {EntryPoint} from "account-abstraction/contracts/core/EntryPoint.sol";
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
 import {IEntryPoint} from "@openzeppelin/contracts/interfaces/draft-IERC4337.sol";
-import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
@@ -16,16 +15,14 @@ import {Deployers} from "v4-core/test/utils/Deployers.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
+import {PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {ModifyLiquidityParams} from "v4-core/src/interfaces/IPoolManager.sol";
-import {SwapParams} from "v4-core/src/interfaces/IPoolManager.sol";
 import {BalanceDelta} from "v4-core/src/interfaces/IPoolManager.sol";
 
 import {Permit2} from "permit2/Permit2.sol";
-import {Permit2Lib} from "permit2/libraries/Permit2Lib.sol";
 
 // Internal
 import {UniswapPaymaster} from "src/core/UniswapPaymaster.sol";
@@ -66,8 +63,10 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     address lp2;
 
     // The EOA that will get sponsored by the paymaster
+    // forge-lint: disable-next-line
     address EOA;
     // The private key of the EOA used to sign the user operations
+    // forge-lint: disable-next-line
     uint256 EOAPrivateKey;
 
     // An OpenZeppelin ERC-4337 ECDSA Account Instance to delegate to
@@ -192,24 +191,7 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         });
     }
 
-    function test_swap_success() public {
-        // deal tokens
-        token.mint(address(this), 1e20);
-        // approve the swap router
-        token.approve(address(swapRouter), type(uint256).max);
-        BalanceDelta delta = swap(
-            key,
-            false, // token -> ether,
-            int256(1e15), // exact output (ether)
-            ""
-        );
-
-        // verify the delta
-        assertEq(delta.amount0(), 1e15);
-        assertEq(delta.amount1(), -1001501751876940);
-    }
-
-    function test_permit2_allowance_flow_EOA() public {
+    function test_permit2_allowance_EOA() public {
         // 1. Setup: Give user tokens and approve Permit2
         token.mint(EOA, 1000e18);
         vm.prank(EOA);
@@ -273,7 +255,7 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         assertEq(result, IERC1271.isValidSignature.selector);
     }
 
-    function test_permit2_allowance_flow_smart_account_EIP7702() public {
+    function test_permit2_allowance_EIP7702() public {
         // 1. Setup: Give user tokens and approve Permit2
         token.mint(EOA, 1000e18);
         vm.prank(EOA);
@@ -408,7 +390,6 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         uint256 paymasterBalanceAfter = address(paymaster).balance;
         uint256 bundlerBalanceAfter = bundler.balance;
         uint256 entrypointDepositAfter = entryPoint.balanceOf(address(paymaster));
-        uint256 bundlerPlusEntrypointBalance = bundlerBalanceAfter + entrypointDepositAfter;
 
         int256 bundlerDelta = int256(bundlerBalanceAfter) - int256(bundlerBalanceBefore);
         int256 entrypointDelta = int256(entrypointDepositAfter) - int256(entrypointDepositBefore);

@@ -11,7 +11,6 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
 
 // Permit2 imports
-import {ISignatureTransfer} from "permit2/interfaces/ISignatureTransfer.sol";
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 import {Permit2} from "permit2/Permit2.sol";
 
@@ -32,6 +31,7 @@ contract TestingUtils is Test {
         uint256 privateKey
     ) internal view returns (uint8 v, bytes32 r, bytes32 s) {
         // Build the permit typehash (EIP-2612 standard)
+        // forge-lint: disable-next-line
         bytes32 PERMIT_TYPEHASH = keccak256(
             "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"
         );

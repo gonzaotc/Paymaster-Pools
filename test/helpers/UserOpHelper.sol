@@ -6,7 +6,6 @@ import {PackedUserOperation} from "@openzeppelin/contracts/interfaces/draft-IERC
 import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {ISignatureTransfer} from "permit2/interfaces/ISignatureTransfer.sol";
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 
 /**
