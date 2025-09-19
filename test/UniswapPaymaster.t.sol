@@ -20,16 +20,17 @@ import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {ModifyLiquidityParams} from "v4-core/src/interfaces/IPoolManager.sol";
-import {BalanceDelta} from "v4-core/src/interfaces/IPoolManager.sol";
-
+import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
+import {Hooks} from "v4-core/src/libraries/Hooks.sol";
 import {Permit2} from "permit2/Permit2.sol";
 
 // Internal
 import {UniswapPaymaster} from "src/core/UniswapPaymaster.sol";
 import {MinimalAccountEIP7702} from "test/mocks/accounts/MinimalAccountEIP7702.sol";
-import {ERC20PermitMock} from "test/mocks/ERC20PermitMock.sol";
 import {UserOpHelper} from "test/helpers/UserOpHelper.sol";
 import {TestingUtils} from "test/helpers/TestingUtils.sol";
+import {AsymmetricFeeHook} from "src/hooks/AsymmetricFeeHook.sol";
+import {ERC20Mock} from "test/mocks/ERC20Mock.sol";
 
 // Test
 import {Test, Vm} from "forge-std/Test.sol";
@@ -55,8 +56,11 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     // The UniswapPaymaster contract being tested
     UniswapPaymaster public paymaster;
 
+    // The AsymmetricFeeHook contract being tested
+    AsymmetricFeeHook public hook;
+
     // An ERC-20 token accepted by a particular [ETH, token] pool
-    ERC20PermitMock public token;
+    ERC20Mock public token;
     // People providing liquidity to the pool
     address lp1;
     // People providing liquidity to the pool
@@ -103,17 +107,23 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         paymaster = new UniswapPaymaster(manager, permit2);
 
         // create a ERC20 with permit.
-        token = new ERC20PermitMock();
+        token = new ERC20Mock();
 
         // Deploy the ECDSA account to delegate to
         account = new MinimalAccountEIP7702();
+
+        // deploy the asymmetric fee hook
+        hook = AsymmetricFeeHook(address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG)));
+        deployCodeTo(
+            "src/hooks/AsymmetricFeeHook.sol:AsymmetricFeeHook", abi.encode(manager, 200, 100), address(hook)
+        );
 
         // initialize the pool
         (key,) = initPool(
             Currency.wrap(address(0)), // native currency
             Currency.wrap(address(token)), // token currency
-            IHooks(address(0)), // hooks
-            1000, // fee
+            IHooks(address(hook)), // hooks
+            LPFeeLibrary.DYNAMIC_FEE_FLAG, // fee
             60, // tick spacing
             SQRT_PRICE_1_1 // sqrt price x96
         );

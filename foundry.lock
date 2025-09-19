@@ -8,7 +8,7 @@
   "lib/permit2": {
     "branch": {
       "name": "main",
-      "rev": "cc56ad0f3439c502c246fc5cfcc3db92bb8b7219"
+      "rev": "cffea46de4558b7443889d48ddb2f216b113eaa1"
     }
   },
   "lib/permit2.git": {
