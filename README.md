@@ -1,41 +1,33 @@
 ### Introduction:
 
-In order to be able to use any EVM blockchain, users must pay their transaction costs in native currency, such as Ether.
-This has been already acknowledged by the community for a long time as a major pain in the user experience and as a significant blocker for mass
-adoption, where newly onboarded users may eventually receive cryptocurrency but kept blocked from doing anything with it due to the 
-lack of native currency to pay for the gas, which may be really frustrating.
+In order to use an EVM blockchain, users must pay transaction costs in native currency (Ether), creating a significant UX barrier for mass adoption. New users receiving cryptocurrency often find themselves unable to transact their just obtained shiny tokens due to lack of native currency for gas fees.
 
-This led to extensive research and innovation which has produced several ERCs and EIPs aiming to solve this issue, 
-eventually giving birth to the concept of "**_Gas Abstraction_**", as a sub-topic of the broader "**_Account Abstraction_**" space.
+This led to extensive research, eventually giving birth to "Gas Abstraction" - enabling alternative payment methods for transaction fees. ERC-4337 has emerged as the leading solution, providing gas abstraction without requiring Ethereum protocol changes. However, current paymaster implementations remain centralized, creating new bottlenecks.
 
-Among various approaches, ERC-4337 has emerged as the current leading solution due to its unique advantage: enabling gas abstraction without requiring Ethereum core protocol changes. However, while ERC-4337 provides an elegant off-protocol architecture for alternative gas payment methods, most current paymaster implementations remain centralized and immature. 
-
-##### Requirements for useful gas abstraction:
+#### Requirements for the next-gen gas abstraction:
 
 - **Universal token support**: Users should be able to pay gas with any token
-- **Zero downtime availability**: permanently available, censorship-resistant infrastructure is a must, since users cannot be sponsored during downtimes
-- **Minimal cost overhead**: costs should be extremely low to make the system feasible and acceptable.
+- **Zero downtime availability**: permanently available, censorship-resistant infrastructure is a must, since relying users experience a denial of service during downtimes.
+- **Minimal cost overhead**: costs should be strictly low to make the system feasible and acceptable.
 
 
 
 ### Current Paymaster landscape
 
-Today's Paymasters suffer from fundamental centralization issues with strong consequences:
+Today's Paymasters suffer from fundamental centralization issues and the consequences from their design:
 
-- **Ecosystem dominated by few players**: Most users rely on a single provider, and outages blocks users from using their funds with no built-in aggregation to switch providers.
-- **Limited token support**: Token selection based solely on paymaster owner capacity and profitability - users are at the mercy of provider decisions.
+- **Limited competition**: Most users rely on a single provider, and outages block users from using their funds with no built-in aggregation to switch providers.
+- **Restricted token support**: Token selection based solely on paymaster owner capacity and profitability - users are at the mercy of provider decisions.
 - **Poor user experience**: Users must manually switch between providers (Pimlico, Alchemy, Biconomy) for different tokens, similar to pre-DEX aggregator swapping.
-- **Monopolistic pricing, large players win it all**: The centralized paymaster owner captures 100% of service fees and solely decides pricing without sane competition because of the high bar to enter the gas sponsoring market, similar to CEX fees before Uniswap enabled market-driven fee discovery.
-- **Operational overhead**: Centralized Paymasters relies on manual or partially automated rebalancing required at all times with large operational costs, where any rebalancing downtime causes a denial of service for the users and apps that rely on them.
+- **Monopolistic pricing**: Centralized paymaster owners capture 100% of service fees and solely decide pricing without competition due to the high barrier to enter the gas sponsoring market, similar to CEX fees before Uniswap enabled market-driven fee discovery.
+- **Operational overhead**: Centralized paymasters rely on manual or partially automated rebalancing with large operational costs, where any rebalancing downtime causes denial of service for users and apps that depend on them.
 
-
-_Did you know that centralized paymasters today charge between 5% and 100%?, based on a quick search, ZeroDev, Circle, and Pimlico Paymasters charge between 5-10%?, while another less competent services charge up to 100%_
 
 ---
 
-# A decentralized alternative: Uniswap Paymaster + Paymaster Pools
+# A permissionless alternative: Uniswap Paymaster + Paymaster Pools
 
-a decentralized paymaster infraestructure is proposed instead, aiming to enhance the landscape in the following manners:
+A different paymster design is proposed instead, aiming to enhance the landscape in the following manners:
 
 #### **1. Permissionless Liquidity Provision**
 Allows anyone to become a sponsoring liquidity provider of any size, removing the high bar to enter the gas sponsoring market.
