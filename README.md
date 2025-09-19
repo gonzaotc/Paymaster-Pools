@@ -39,27 +39,49 @@ a decentralized paymaster infraestructure is proposed instead, aiming to enhance
 
 #### **1. Permissionless Liquidity Provision**
 Allows anyone to become a sponsoring liquidity provider of any size, removing the high bar to enter the gas sponsoring market.
+At the same time, The Uniswap Paymaster and the Paymaster Pools are immutable ungoverned pieces of code, and users can exit at all times.
 
 #### **2. Distributed Profit Sharing**
 Distributes the sponsoring profits proportionally across all liquidity providers.
 
 #### **3. Free-Market Price Discovery**
-Allows creation of different paymaster pools with any determined sponsoring fee configuration, enabling the market to discover the right sponsoring fee.
+Allows the creation of paymaster pools with different fee configurations, enabling the market to discover the right sponsoring fee.
 
-#### **5. Permissionless **
-Paymaster Pools are immutable contracts where anyone can provide liquidity and exit at all times, creating a strong and decentralized resistant system.
+#### **4. Enhanced Yields thanks to increased capital efficiency** 
+By making use of Paymaster Pools, the capital from liquidity providers can provide more utility to the market; 
+it is not only being used for swaps, it also serves for anyone looking to pay for a transaction in a particular token.
 
-### **6. Increased Yields
+### Components
 
+## Uniswap Paymaster
+An ERC-4337 compliant Paymaster that leverages existing Uniswap V4 pools to enable gasless transactions paid in any ERC-20 token.
 
-Currently, the project consists in three main components:
+### Core Mechanism
+- **Permissionless**: Works with any existing [ETH, Token] Uniswap V4 pool without requiring pool modifications
+- **Just-in-time liquidity**: Uses the pool's existing liquidity to perform token→ETH swaps during UserOperation validation
+- **Permit2 integration**: Enables gasless approvals, allowing EOAs without native currency to pre-pay for sponsorship
+- **EntryPoint deposit management**: Automatically manages ETH deposits in the ERC-4337 EntryPoint for UserOperation prefunding
 
-The Uniswap Paymaster, handling the sponsorship of user operations.
+### Technical Flow
+1. User signs Permit2 allowance for token spending
+2. Paymaster validates UserOperation and executes token→ETH swap via pool callback
+3. ETH is used to prefund the EntryPoint for UserOperation execution
+4. Excess ETH is refunded to user post-execution
 
-LP's providing liquidity to Paymaster Pools (which is any pool conformed by ETH and a particular token). Altrough the idea 
+## Paymaster Pool (Existing Uniswap Pools)
+Any Uniswap V4 pool with [ETH, Token] pair automatically becomes a Paymaster Pool without modification.
 
-LP's providing deposit for the entry point.
+### Economic Benefits
+- **Increased capital utility**: LP tokens serve dual purpose - trading liquidity + transaction sponsorship
+- **Competitive fee discovery**: Pool fees determine sponsorship costs, creating market-driven pricing
+- **No additional infrastructure**: Leverages existing Uniswap infrastructure and liquidity
 
+## Paymaster Pool Hooks (Optional)
+- **AsymmetricFeeHook**: Reduces swap fees in the token→ETH direction to minimize transaction costs for users
+- **Custom hooks**: Developers can create specialized hooks for specific paymaster pool behaviors
+
+## Paymaster Pool Aggregator (WIP)
+Off-chain service that finds the lowest-cost Paymaster Pool for a given token, enabling optimal routing for users.
 
 
 ---
