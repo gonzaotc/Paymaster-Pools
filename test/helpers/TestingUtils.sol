@@ -124,5 +124,4 @@ contract TestingUtils is Test {
             salt: bytes32(0)
         });
     }
-
 }

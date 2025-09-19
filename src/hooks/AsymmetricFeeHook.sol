@@ -12,7 +12,6 @@ import {SwapParams} from "v4-core/src/interfaces/IPoolManager.sol";
 /// Particularly useful for [ETH, Token] pools to make token→ETH swaps cheaper,
 /// reducing costs for users of the `UniswapPaymaster`.
 contract AsymmetricFeeHook is BaseOverrideFee {
-
     /// fee in the ether->token direction
     // foundry disable-next-line
     uint24 immutable feeZeroForOne;
@@ -20,7 +19,9 @@ contract AsymmetricFeeHook is BaseOverrideFee {
     // foundry disable-next-line
     uint24 immutable feeOneForZero;
 
-    constructor(IPoolManager _poolManager, uint24 _feeZeroForOne, uint24 _feeOneForZero) BaseOverrideFee(_poolManager) {
+    constructor(IPoolManager _poolManager, uint24 _feeZeroForOne, uint24 _feeOneForZero)
+        BaseOverrideFee(_poolManager)
+    {
         feeZeroForOne = _feeZeroForOne;
         feeOneForZero = _feeOneForZero;
     }
@@ -28,8 +29,8 @@ contract AsymmetricFeeHook is BaseOverrideFee {
     /// @dev Returns an asymmetric fee, where it depends on the direction of the swap.
     function _getFee(address, PoolKey calldata, SwapParams calldata params, bytes calldata)
         internal
-        override
         virtual
+        override
         returns (uint24)
     {
         return params.zeroForOne ? feeZeroForOne : feeOneForZero;

@@ -36,7 +36,6 @@ import {ERC20Mock} from "test/mocks/ERC20Mock.sol";
 import {Test, Vm} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 
-
 contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -80,16 +79,6 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     // Someone receiving tokens from "EOA" because of the sponsored userop
     address receiver;
 
-    struct GasConfiguration {
-        uint256 callGasLimit; // The amount of gas to allocate the main execution call
-        uint256 verificationGasLimit; //The amount of gas to allocate for the verification step
-        uint256 preVerificationGas; // Extra gas to pay the bundler
-        uint256 paymasterVerificationGasLimit; // The amount of gas to allocate for the paymaster validation code (only if paymaster exists)
-        uint256 paymasterPostOpGasLimit; // The amount of gas to allocate for the paymaster post-operation code (only if paymaster exists)
-        uint256 maxFeePerGas; // Maximum fee per gas (similar to EIP-1559 max_fee_per_gas)
-        uint256 maxPriorityFeePerGas; // Maximum priority fee per gas (similar to EIP-1559 max_priority_fee_per_gas)
-    }
-
     function setUp() public {
         // deploy the entrypoint
         deployCodeTo(
@@ -114,9 +103,13 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         account = new MinimalAccountEIP7702();
 
         // deploy the asymmetric fee hook
-        hook = AsymmetricFeeHook(address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG)));
+        hook = AsymmetricFeeHook(
+            address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_INITIALIZE_FLAG))
+        );
         deployCodeTo(
-            "src/hooks/AsymmetricFeeHook.sol:AsymmetricFeeHook", abi.encode(manager, 200, 100), address(hook)
+            "src/hooks/AsymmetricFeeHook.sol:AsymmetricFeeHook",
+            abi.encode(manager, 200, 100),
+            address(hook)
         );
 
         // initialize the pool
@@ -417,10 +410,10 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
         // Depositor should not have lost any funds.
         assertGe(depositorBalanceAfter, depositorBalanceBefore);
 
-        assertEq(paymaster.balanceOf(depositor), 0, 'Depositor shares != 0');
-        assertEq(paymaster.totalSupply(), 0, 'Paymaster total shares != 0');
+        assertEq(paymaster.balanceOf(depositor), 0, "Depositor shares != 0");
+        assertEq(paymaster.totalSupply(), 0, "Paymaster total shares != 0");
 
         // Due to vault inflation protection, the some dust is left in the entrypoint.
-        assertApproxEqAbs(entryPoint.balanceOf(address(paymaster)), 0, 1, 'Paymaster deposit != 0');
+        assertApproxEqAbs(entryPoint.balanceOf(address(paymaster)), 0, 1, "Paymaster deposit != 0");
     }
 }

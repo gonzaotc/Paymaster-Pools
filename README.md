@@ -1,81 +1,81 @@
 ### Introduction:
 
-To use any EVM blockchain, users must pay their transaction costs (weighted in gas) in native currency, such as Ether.
-This has been already acknowledged for a long time by the community as a major pain in the user experience and as a significant blocker for mass
-adoption, where newly onboarded users may eventually receive cryptocurrency in their account but kept blocked from doing anything with it due to the 
-lack of native currency to pay for the gas, which is a really frustrating.
+In order to use an EVM blockchain, users must pay transaction costs in native currency (Ether), creating a significant UX barrier for mass adoption. New users receiving cryptocurrency often find themselves unable to transact their just obtained shiny tokens due to lack of native currency for gas fees.
 
-This led to extensive research and innovation which has produced several ERCs and EIPs aiming to solve this issue, 
-eventually giving birth to the concept of "**_Gas Abstraction_**", as a sub-topic of the broader "**_Account Abstraction_**" space.
+This led to extensive research, eventually giving birth to "Gas Abstraction" - enabling alternative payment methods for transaction fees. ERC-4337 has emerged as the leading solution, providing gas abstraction without requiring Ethereum protocol changes. However, current paymaster implementations remain centralized, creating new bottlenecks.
 
-Among various approaches, ERC-4337 has emerged as the current leading solution due to its unique advantage: enabling gas abstraction without requiring Ethereum core protocol changes. However, while ERC-4337 provides an elegant off-protocol architecture for alternative gas payment methods, current paymaster implementations remain centralized and, frankly, immature. 
-
-##### Core requirements for truly useful gas abstraction:
+#### Requirements for the next-gen gas abstraction:
 
 - **Universal token support**: Users should be able to pay gas with any token
-- **Zero downtime availability**: permanently available, censorship-resistant infrastructure is a must, since users cannot be sponsored during downtimes
-- **Minimal pricing and costs overheads**: costs should be extremely low to make the system usable
+- **Zero downtime availability**: permanently available, censorship-resistant infrastructure is a must, since relying users experience a denial of service during downtimes.
+- **Minimal cost overhead**: costs should be strictly low to make the system feasible and acceptable.
 
 
 
 ### Current Paymaster landscape
 
-Today's Paymasters suffer from fundamental centralization issues with strong consequences:
+Today's Paymasters suffer from fundamental centralization issues and the consequences from their design:
 
-- **Ecosystem dominated by few players**: Most users rely on a single provider, and outages blocks users from using their funds with no built-in aggregation to switch providers
-- **Limited token support**: Token selection based solely on paymaster owner capacity and profitability - users are at the mercy of provider decisions
-- **Poor user experience**: Users must manually switch between providers (Pimlico, Alchemy, Biconomy) for different tokens, similar to pre-DEX aggregator swapping
-- **Monopolistic pricing, large players win it all**: The centralized paymaster owner captures 100% of service fees and solely decides pricing without sane competition because of the high bar to enter the gas sponsoring market, similar to CEX fees before Uniswap enabled market-driven fee discovery
-- **Operational overhead**: Centralized Paymasters relies on manual or partially automated rebalancing required at all times with large operational costs, where any rebalancing downtime causes transaction sponsoring downtime
-- **Single capital provider**: A centralized paymaster owner provides all ETH for user operations, creating strict scalability limits constrained to what the owner can provide
-- **Liquidity fragmentation**: Competing players create separate paymasters, fragmenting liquidity and decreasing capital efficiency
-- **Concentrated volatility risk**: The owner bears all price risk from both ETH (gas payments) and accepted tokens (fees), with no risk distribution mechanism, forcing higher fees to cover risks and making the model unsustainable during market volatility
-
-
-_Did you know that centralized paymasters today charge between 5% 100%?, based on a quick search, ZeroDev, Circle, and Pimlico Paymasters charge between 5-10%, while another less competent services charge up to 100%_
+- **Limited competition**: Most users rely on a single provider, and outages block users from using their funds with no built-in aggregation to switch providers.
+- **Restricted token support**: Token selection based solely on paymaster owner capacity and profitability - users are at the mercy of provider decisions.
+- **Poor user experience**: Users must manually switch between providers (Pimlico, Alchemy, Biconomy) for different tokens, similar to pre-DEX aggregator swapping.
+- **Monopolistic pricing**: Centralized paymaster owners capture 100% of service fees and solely decide pricing without competition due to the high barrier to enter the gas sponsoring market, similar to CEX fees before Uniswap enabled market-driven fee discovery.
+- **Operational overhead**: Centralized paymasters rely on manual or partially automated rebalancing with large operational costs, where any rebalancing downtime causes denial of service for users and apps that depend on them.
 
 
 ---
 
-### A decentralized alternative: Paymaster Pools
+# A permissionless alternative: Uniswap Paymaster + Paymaster Pools
 
-To drive meaningful improvement, a decentralized paymaster infraestructure is proposed instead, aiming to enhance the landscape in the following manners:
+A different paymster design is proposed instead, aiming to enhance the landscape in the following manners:
 
 #### **1. Permissionless Liquidity Provision**
 Allows anyone to become a sponsoring liquidity provider of any size, removing the high bar to enter the gas sponsoring market.
+At the same time, The Uniswap Paymaster and the Paymaster Pools are immutable ungoverned pieces of code, and users can exit at all times.
 
 #### **2. Distributed Profit Sharing**
 Distributes the sponsoring profits proportionally across all liquidity providers.
 
 #### **3. Free-Market Price Discovery**
-Allows creation of different paymaster pools with any determined sponsoring fee configuration, enabling the market to discover the right sponsoring fee, inspired by the Uniswap model for swaps.
+Allows the creation of paymaster pools with different fee configurations, enabling the market to discover the right sponsoring fee.
 
-#### **4. Unified Paymaster Router**
-Offer a PaymasterRouter (Singleton) that simply indicates which paymaster offers the lowest sponsoring fee at any moment for a given token while having sufficient liquidity, dramatically simplifying UX.
+#### **4. Enhanced Yields thanks to increased capital efficiency** 
+By making use of Paymaster Pools, the capital from liquidity providers can provide more utility to the market; 
+it is not only being used for swaps, it also serves for anyone looking to pay for a transaction in a particular token.
 
-#### **5. Censorship Resistance, Immutability**
-Paymaster Pools are immutable contracts where anyone can provide liquidity and exit at all times, creating a strong and decentralized resistant system.
+### Components
 
-#### **6. Increased Capital Utility: Rehypothecation**
-Since Paymaster Pools are Uniswap V4 liquidity pools in their core, swaps between [ETH, TOKEN] remain functional, novely increasing **capital utility** as a consequence, as the provided liquidity can be simultaneously used for swapping **and** for gas sponsoring, potentially increasing LP's profits on [ETH, TOKEN] pairs in comparison with traditional pools where LPs only make profits from swaps. 
+## Uniswap Paymaster
+An ERC-4337 compliant Paymaster that leverages existing Uniswap V4 pools to enable gasless transactions paid in any ERC-20 token.
 
-This is achieved through an innovative **EntryPointVault** system - an ERC4626-style vault that tokenizes ERC-4337 EntryPoint deposits as tradeable shares. This enables:
+### Core Mechanism
+- **Permissionless**: Works with any existing [ETH, Token] Uniswap V4 pool without requiring pool modifications
+- **Just-in-time swaps**: Uses the pool's existing liquidity to perform token→ETH swaps during UserOperation validation
+- **Permit2 integration**: Enables gasless approvals, allowing EOAs without native currency to pre-pay for sponsorship
+- **EntryPoint deposit management**: Automatically manages ETH deposits in the ERC-4337 EntryPoint for UserOperation prefunding
 
-- **Liquid Gas Deposits**: EntryPoint deposits become transferable ERC20 tokens, creating a liquid market for gas credits
-- **Composable Gas Infrastructure**: Other protocols can integrate with EntryPoint deposits via standard ERC20 interfaces  
-- **Capital Efficiency**: The same ETH can serve multiple purposes - gas sponsoring, swap liquidity, and yield generation
-- **Distributed Risk**: Gas deposit risks are spread across many token holders rather than concentrated in a single paymaster operator
+### Technical Flow
+1. User signs [Permit2](https://docs.uniswap.org/contracts/permit2/overview) allowance for token spending
+2. Paymaster validates UserOperation and executes token→ETH swap via pool callback
+3. ETH is used to prefund the EntryPoint for UserOperation execution
+4. Excess ETH is refunded to user post-execution
 
-Through ongoing development towards "**liquidity rehypothecation**", ETH is locked in the ERC-4337 EntryPoint (available for sponsoring at all times) but moved into Uniswap's Pool Manager just-in-time when swaps happen, virtually allowing the same ETH liquidity to both sponsor transactions and serve as swap liquidity concurrently, making profits from both sources with the same capital.
+## Paymaster Pool (Existing Uniswap Pools)
+Any Uniswap V4 pool with [ETH, Token] pair automatically becomes a Paymaster Pool without modification.
 
-~~Getting paid for providing liquidity for swaps~~ => Getting paid for providing liquidity for swaps AND for gas sponsoring AND for gas deposit yields. 
+### Economic Benefits
+- **Increased capital utility**: LP tokens serve dual purpose - trading liquidity + transaction sponsorship
+- **Competitive fee discovery**: Pool fees determine sponsorship costs, creating market-driven pricing
+- **No additional infrastructure**: Leverages existing Uniswap infrastructure and liquidity
 
-#### **7. Autonomous Rebalancing**
-Naturally, since gas sponsoring decreases ETH balances and increases token balances (increased by sponsoring fees), there is constant pressure in the zeroForOne direction (ETH to Token), and a rebalance mechanism is required. 
+## Paymaster Pool Hooks (Optional)
+- **AsymmetricFeeHook**: Reduces swap fees in the token→ETH direction to minimize transaction costs for users
+- **Custom hooks**: Developers can create specialized hooks for specific paymaster pool behaviors
 
-Similar to how MakerDAO allows anyone to liquidate positions and make a profit by regulating the system, and because Paymaster Pools are Uniswap V4 Pools, the chosen rebalancing mechanism are simply permissionless swaps, allowing anyone to capture generated imbalances as arbitrage opportunities.   (Note that LPs earn fees on both sponsoring and rebalancing transactions, as rebalancing swaps also pays fees to LPs!)
+## Paymaster Pool Aggregator (WIP)
+Off-chain service that finds the lowest-cost Paymaster Pool for a given token, enabling optimal routing for users.
 
 
 ---
 
-*Building the infrastructure for truly decentralized gas abstraction on Ethereum.*
+*Building the infrastructure for the next gen decentralized gas abstraction on Ethereum.*

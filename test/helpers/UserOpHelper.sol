@@ -7,6 +7,7 @@ import {ERC4337Utils} from "@openzeppelin/contracts/account/utils/draft-ERC4337U
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
+import {IEntryPointExtra} from "@openzeppelin/contracts/account/utils/draft-ERC4337Utils.sol";
 
 /**
  * @title UserOpHelper
@@ -15,6 +16,16 @@ import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
 contract UserOpHelper is Test {
     using ERC4337Utils for PackedUserOperation;
     using MessageHashUtils for bytes32;
+
+    struct GasConfiguration {
+        uint256 callGasLimit; // The amount of gas to allocate the main execution call
+        uint256 verificationGasLimit; //The amount of gas to allocate for the verification step
+        uint256 preVerificationGas; // Extra gas to pay the bundler
+        uint256 paymasterVerificationGasLimit; // The amount of gas to allocate for the paymaster validation code (only if paymaster exists)
+        uint256 paymasterPostOpGasLimit; // The amount of gas to allocate for the paymaster post-operation code (only if paymaster exists)
+        uint256 maxFeePerGas; // Maximum fee per gas (similar to EIP-1559 max_fee_per_gas)
+        uint256 maxPriorityFeePerGas; // Maximum priority fee per gas (similar to EIP-1559 max_priority_fee_per_gas)
+    }
 
     /**
      * @dev Constructs a basic UserOperation for testing
@@ -67,12 +78,12 @@ contract UserOpHelper is Test {
     /**
      * @dev Signs a UserOperation with the given private key
      */
-    function signUserOp(PackedUserOperation calldata userOp, uint256 privateKey, address entryPoint)
+    function signUserOp(PackedUserOperation memory userOp, uint256 privateKey, address entryPoint)
         public
         view
         returns (PackedUserOperation memory signedUserOp)
     {
-        bytes32 userOpHash = userOp.hash(entryPoint);
+        bytes32 userOpHash = hash(userOp, entryPoint);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, userOpHash);
 
         return PackedUserOperation({
@@ -86,5 +97,10 @@ contract UserOpHelper is Test {
             paymasterAndData: userOp.paymasterAndData,
             signature: abi.encodePacked(r, s, v)
         });
+    }
+
+
+    function hash(PackedUserOperation memory self, address entrypoint) internal view returns (bytes32) {
+        return IEntryPointExtra(entrypoint).getUserOpHash(self);
     }
 }

@@ -8,16 +8,16 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /**
  * @title EntryPointVault
- * @author Gonzalo Othacehe  
+ * @author Gonzalo Othacehe
  * @notice ERC-4626-style Vault for pooled ERC-4337 EntryPoint deposits
- * 
+ *
  * @dev Allows anyone to deposit native currency into the ERC-4337 EntryPoint and receive proportional shares
- * in return. Depositors can withdraw their funds at any time. Any profits generated are automatically distributed 
+ * in return. Depositors can withdraw their funds at any time. Any profits generated are automatically distributed
  * to share holders proportionally to their ownership. Inspired by and partially sharing interface with ERC-4626.
- * 
- * dear reader, I owe you the NatSpec for this contract functions, you can check the ERC-4626 docs until then; 
+ *
+ * dear reader, I owe you the NatSpec for this contract functions, you can check the ERC-4626 docs until then;
  * https://docs.openzeppelin.com/contracts/5.x/api/token/erc20#ERC4626
- */ 
+ */
 contract EntryPointVault is ERC20 {
     using Math for uint256;
 
@@ -71,7 +71,7 @@ contract EntryPointVault is ERC20 {
         return _convertToAssets(shares, Math.Rounding.Floor);
     }
 
-    function deposit(uint256 assets, address receiver) public virtual payable returns (uint256) {
+    function deposit(uint256 assets, address receiver) public payable virtual returns (uint256) {
         if (assets != msg.value) {
             revert EntryPointVaultInvalidNativeAmount(assets, msg.value);
         }
@@ -154,7 +154,7 @@ contract EntryPointVault is ERC20 {
         if (caller != owner) {
             _spendAllowance(owner, caller, shares);
         }
-        _burn(owner, shares);   
+        _burn(owner, shares);
         entryPoint().withdrawTo(payable(receiver), assets);
 
         emit Withdraw(caller, receiver, owner, assets, shares);

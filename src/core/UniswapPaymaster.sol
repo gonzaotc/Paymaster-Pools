@@ -39,9 +39,7 @@ contract UniswapPaymaster is MinimalPaymasterCore, EntryPointVault {
     using CurrencySettler for Currency;
     using SafeCast for *;
 
-    // forge-lint: disable-next-line
     IPoolManager public immutable manager;
-    // forge-lint: disable-next-line
     Permit2 public immutable permit2;
 
     constructor(IPoolManager _manager, Permit2 _permit2) {
@@ -186,7 +184,13 @@ contract UniswapPaymaster is MinimalPaymasterCore, EntryPointVault {
         return 30_000;
     }
 
-    function entryPoint() public view virtual override(MinimalPaymasterCore, EntryPointVault) returns (IEntryPoint) {
+    function entryPoint()
+        public
+        view
+        virtual
+        override(MinimalPaymasterCore, EntryPointVault)
+        returns (IEntryPoint)
+    {
         return super.entryPoint();
     }
 

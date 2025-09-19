@@ -5,43 +5,20 @@
 -include config.env
 
 # Default Anvil configuration
-ANVIL_HOST := 0.0.0.0
-ANVIL_PORT := 8545
-ANVIL_RPC_URL := http://localhost:$(ANVIL_PORT)
+ANVIL_HOST := 0.0.0.0 
+ANVIL_RPC_URL := http://localhost:8545
 
-# Default private key (Anvil's first account)
-PRIVATE_KEY := 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-# Forge script configuration
-SCRIPT_CONTRACT := script/Deploy.s.sol:Deploy
-
-# Default values for environment variables
-BROADCAST ?= true
-BUNDLER_ETH ?= 1000000000000000000
-DEPOSITOR_ETH ?= 1000000000000000000
-LP_ETH ?= 100000000000000000000000000
-TOKEN_AMOUNT ?= 100000000000000000000000000
-LIQUIDITY_AMOUNT ?= 10000000000000000000000
+# Default addresses
+PRIVATE_KEY := 0x1e5091fe2d2997d2a7121bf052a974fa66af92da69890a2e738d4e7c39faede2
+EOA_ADDRESS := 0x8CF2e7649D788f83Fa32EfFa0386724f6fD78BD5
+TOKEN_ADDRESS := 0x07088757F513C5E48aeBb66f0a67F76260A737B4
+RECEIVER_ADDRESS := 0xB6D4805bf6943c5875C0C7b67EDa24b2bDACBF6e
+PERMIT2_ADDRESS := 0x000000000022D473030F116dDEE9F6B43aC78BA3
 
 .PHONY: help anvil deploy test clean compile setup-env mint-tokens add-liquidity
 
-# Default target
-help:
-	@echo "Decentralized Paymasters - Available Commands:"
-	@echo ""
-	@echo "  make anvil     - Start Anvil local blockchain"
-	@echo "  make help      - Show this help message"
-	@echo ""
-	@echo "Environment variables:"
-	@echo "  ANVIL_PORT     - Anvil port (default: 8545)"
-	@echo "  PRIVATE_KEY    - Private key for deployment"
-	@echo "  FORK_URL       - RPC URL for forking (e.g., https://eth-mainnet.alchemyapi.io/v2/YOUR_KEY)"
-
-# Start Anvil blockchain
-anvil:
-	@echo "Starting Anvil blockchain on $(ANVIL_HOST):$(ANVIL_PORT)..."
-	@echo "Press Ctrl+C to stop"
-	anvil --host $(ANVIL_HOST) --port $(ANVIL_PORT)
+fork:
+	anvil --fork-url https://eth-sepolia.g.alchemy.com/v2/qnebjCbC6nk-NLXELGEZ4 --fork-block-number 9232749
 
 # Deploy contracts to Anvil
 deploy: compile
@@ -51,14 +28,59 @@ deploy: compile
 		--broadcast \
 		--private-key $(PRIVATE_KEY)
 
-# Deploy without broadcasting (dry run)
-deploy-dry:
-	BROADCAST=false make deploy
-
-# Mint tokens (deploys new token and mints)
-mint:
-	@echo "mint-tokens"
-	forge script script/MintTokens.sol:MintTokens \
+add-liquidity:
+	@echo "add-liquidity"
+	forge script script/AddLiquidity.s.sol:AddLiquidity \
 		--rpc-url $(ANVIL_RPC_URL) \
 		--broadcast \
 		--private-key $(PRIVATE_KEY)
+
+code:
+	cast code --rpc-url $(ANVIL_RPC_URL) $(EOA_ADDRESS)
+
+delegate:
+	forge script script/EIP7702Delegation.s.sol:EIP7702Delegation \
+		--rpc-url $(ANVIL_RPC_URL) \
+		--broadcast \
+		--private-key $(PRIVATE_KEY)
+
+approve-permit:
+	forge script script/ApprovePermit.s.sol:ApprovePermit \
+		--rpc-url $(ANVIL_RPC_URL) \
+		--broadcast \
+		--private-key $(PRIVATE_KEY)
+
+deposit:
+	forge script script/Deposit.s.sol:Deposit \
+		--rpc-url $(ANVIL_RPC_URL) \
+		--broadcast \
+		--private-key $(PRIVATE_KEY)
+
+sponsorship:
+	forge script script/Sponsorship.s.sol:Sponsorship \
+		--rpc-url $(ANVIL_RPC_URL) \
+		--broadcast \
+		--private-key $(PRIVATE_KEY)
+
+
+
+
+
+
+
+
+
+
+
+
+balance:
+	cast balance --rpc-url $(ANVIL_RPC_URL) $(EOA_ADDRESS) | cast to-dec
+
+balance-of-eoa:
+	cast call $(TOKEN_ADDRESS) "balanceOf(address)" $(EOA_ADDRESS) --rpc-url $(ANVIL_RPC_URL) | cast to-dec
+
+balance-of-receiver:
+	cast call $(TOKEN_ADDRESS) "balanceOf(address)" $(RECEIVER_ADDRESS) --rpc-url $(ANVIL_RPC_URL) | cast to-dec
+	
+permit-allowance:
+	cast call $(TOKEN_ADDRESS) "allowance(address,address)" $(EOA_ADDRESS) $(PERMIT2_ADDRESS) --rpc-url $(ANVIL_RPC_URL) | cast to-dec
