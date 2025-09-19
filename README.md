@@ -50,12 +50,12 @@ An ERC-4337 compliant Paymaster that leverages existing Uniswap V4 pools to enab
 
 ### Core Mechanism
 - **Permissionless**: Works with any existing [ETH, Token] Uniswap V4 pool without requiring pool modifications
-- **Just-in-time liquidity**: Uses the pool's existing liquidity to perform token→ETH swaps during UserOperation validation
+- **Just-in-time swaps**: Uses the pool's existing liquidity to perform token→ETH swaps during UserOperation validation
 - **Permit2 integration**: Enables gasless approvals, allowing EOAs without native currency to pre-pay for sponsorship
 - **EntryPoint deposit management**: Automatically manages ETH deposits in the ERC-4337 EntryPoint for UserOperation prefunding
 
 ### Technical Flow
-1. User signs Permit2 allowance for token spending
+1. User signs [Permit2](https://docs.uniswap.org/contracts/permit2/overview) allowance for token spending
 2. Paymaster validates UserOperation and executes token→ETH swap via pool callback
 3. ETH is used to prefund the EntryPoint for UserOperation execution
 4. Excess ETH is refunded to user post-execution
@@ -78,4 +78,4 @@ Off-chain service that finds the lowest-cost Paymaster Pool for a given token, e
 
 ---
 
-*Building the infrastructure for truly decentralized gas abstraction on Ethereum.*
+*Building the infrastructure for the next gen decentralized gas abstraction on Ethereum.*
