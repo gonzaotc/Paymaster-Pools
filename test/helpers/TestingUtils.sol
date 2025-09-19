@@ -9,6 +9,7 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {TickMath} from "v4-core/src/libraries/TickMath.sol";
 import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "v4-core/test/utils/LiquidityAmounts.sol";
+import {ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 
 // Permit2 imports
 import {IAllowanceTransfer} from "permit2/interfaces/IAllowanceTransfer.sol";
@@ -102,4 +103,26 @@ contract TestingUtils is Test {
             liquidity
         );
     }
+
+    function _getTickLower() public pure returns (int24) {
+        return -60;
+    }
+
+    function _getTickUpper() public pure returns (int24) {
+        return 60;
+    }
+
+    function _liquidityParams(int256 liquidityDelta)
+        public
+        pure
+        returns (ModifyLiquidityParams memory)
+    {
+        return ModifyLiquidityParams({
+            tickLower: _getTickLower(),
+            tickUpper: _getTickUpper(),
+            liquidityDelta: liquidityDelta,
+            salt: bytes32(0)
+        });
+    }
+
 }

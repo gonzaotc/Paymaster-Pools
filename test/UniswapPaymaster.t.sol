@@ -36,6 +36,7 @@ import {ERC20Mock} from "test/mocks/ERC20Mock.sol";
 import {Test, Vm} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 
+
 contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -175,27 +176,6 @@ contract PaymasterTest is Test, Deployers, UserOpHelper, TestingUtils {
             key, _liquidityParams(int128(liquidityToAdd)), ""
         );
         vm.stopPrank();
-    }
-
-    function _getTickLower() public pure returns (int24) {
-        return -60;
-    }
-
-    function _getTickUpper() public pure returns (int24) {
-        return 60;
-    }
-
-    function _liquidityParams(int256 liquidityDelta)
-        public
-        pure
-        returns (ModifyLiquidityParams memory)
-    {
-        return ModifyLiquidityParams({
-            tickLower: _getTickLower(),
-            tickUpper: _getTickUpper(),
-            liquidityDelta: liquidityDelta,
-            salt: bytes32(0)
-        });
     }
 
     function test_permit2_allowance_EOA() public {
