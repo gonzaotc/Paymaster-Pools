@@ -18,7 +18,6 @@ Today's Paymasters suffer from fundamental centralization issues and the consequ
 - **Restricted token support**: Token selection based solely on paymaster owner capacity and profitability - users are at the mercy of provider decisions.
 - **Poor user experience**: Users must manually switch between providers (Pimlico, Alchemy, Biconomy) for different tokens, similar to pre-DEX aggregator swapping.
 - **Monopolistic pricing**: Centralized paymaster owners capture 100% of service fees and solely decide pricing without competition due to the high barrier to enter the gas sponsoring market, similar to CEX fees before Uniswap enabled market-driven fee discovery.
-- **Operational overhead**: Centralized paymasters rely on manual or partially automated rebalancing systems with considerable operational costs that manifest itself as increased prices for end users, and where any rebalancing downtime causes denial of service for users and apps that rely on them.
 
 
 ---
